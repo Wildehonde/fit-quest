@@ -49,3 +49,6 @@ Social, rewards, coach voice, planned rest days, Strava/TrainingPeaks imports, A
 
 ## Hyrox
 Add Hyrox under Sports. Pick your division (Open/Pro/Adaptive · Men/Women/Doubles/Relay) to see the official station weights. After a race, go to **Log workout → Hyrox race** and enter all 8 runs, 8 stations and roxzone. You get the total, per-station PBs and a split chart against your last race. Your first race unlocks the Hyrox vest for your avatar. Test: `node /workspace/pwtest/hx.js` (screenshots `screenshots/hyrox-*.png`).
+
+## Goal cap
+You can have up to 3 active goals per sport. Picking a 4th asks whether you'd rather build up: **Build up instead** saves it to that sport's wishlist, while **Override** adds it anyway and gives up that sport's Earned It badge. Once every goal in a sport has a baseline and 2 weeks have passed, the sport unlocks another slot and suggests your next goal. Test: `node /workspace/pwtest/cap.js` (screenshots `goal-cap-*.png`).

@@ -136,6 +136,10 @@ const HABITS = [
 ];
 const START_SLOTS = { beginner: 3, athlete: 3, goggins: 5 };
 
+// Goal cap: 3 active goals per sport, +1 slot earned when every active goal in the sport has a baseline and 2 weeks have passed.
+const GOAL_CAP = 3, SLOT_DAYS = 14;
+const capFor = sp => GOAL_CAP + ((S.goalSlots || {})[sp] || 0);
+const activeIn = (sp, st = S) => st.goals.filter(g => g.status === 'active' && goalDef(g.id).sport === sp);
 const BADGES = {
   first_checkin: ['👣', 'First Step', s => s.log.length >= 1 || Object.keys(s.habits.days).length >= 1],
   streak7:   ['🔥', '7-Day Streak', s => s.bestStreak >= 7],
@@ -154,6 +158,7 @@ const BADGES = {
   hx_sub90:  ['⏱️', 'Hyrox Sub-90', s => s.sessions.some(x => x.exId === 'hx_race' && x.key < 5400)],
   hx_sub75:  ['🚀', 'Hyrox Sub-75', s => s.sessions.some(x => x.exId === 'hx_race' && x.key < 4500)],
   hx_sweep:  ['🧹', 'Station Sweep (8 PBs in one race)', s => s.sessions.some(x => x.exId === 'hx_race' && x.stationPBs === 8)],
+  ...Object.fromEntries(Object.entries(SPORTS).map(([k, [ic, n]]) => ['earned_' + k, ['🔓', `Earned It: ${n}`, s => !(s.goalOverride || {})[k] && ((s.goalSlots || {})[k] || 0) >= 1]])),
   finisher:  ['🏅', 'Distance Finisher', s => s.sessions.some(x => goalDef(x.exId).type === 'build')],
   firstpb:   ['🏆', 'First PB', s => s.pbCount >= 1],
   pb10:      ['🥊', '10 PBs', s => s.pbCount >= 10],
@@ -191,7 +196,7 @@ function freshState() {
     sports: [...DEFAULT_SPORTS], goals: seedGoals(), everParked: false, sessions: [], pbCount: 0,
     habits: { active: HABITS.filter(h => h.core).map(h => h.id), slots: 3, earnedSlots: 0, wishlist: [], paused: [],
       days: {}, start: today(), evaluatedTo: null, weakWeeks: 0, override: false, weekLog: [] },
-    photoCount: 0, photoWeeks: 0, share: { weight: false, photo: false }, prosthetic: 'left' }; // Matt: LEFT below-knee prosthetic
+    photoCount: 0, photoWeeks: 0, share: { weight: false, photo: false }, prosthetic: 'left', goalSlots: {}, goalSlotAt: {}, goalWish: {}, goalOverride: {}, capChecked: true }; // Matt: LEFT below-knee prosthetic
 }
 // Fill any missing fields from a fresh state (v1 data, v2 exercise data, older v3 saves).
 function migrate(old) {
@@ -209,6 +214,10 @@ function migrate(old) {
   }
   if (old.exercises && !old.goals) migrateExercises(out, old); // v2 exercises -> v3 goals
   delete out.exercises;
+  if (!old.capChecked) { // saves from before the cap keep their goals, marked as overridden
+    out.capChecked = true; const by = {};
+    for (const g of out.goals) { if (g.status !== 'active') continue; const sp = goalDef(g.id).sport; by[sp] = (by[sp] || 0) + 1; if (by[sp] > GOAL_CAP) { g.overridden = true; out.goalOverride = { ...out.goalOverride, [sp]: true }; } }
+  }
   return out;
 }
 // v2 exercise ids -> closest v3 goal (same measure), or a general training session.
@@ -408,6 +417,22 @@ function updateBaselines() {
     const d = hasBaseline(g);
     if (d) { g.baselineDate = d; continue; }
     if (daysLeft(g) <= 0) { g.status = 'parked'; g.parkedOn = today(); S.everParked = true; toast(`⏸️ ${goalDef(g.id).name} parked: no baseline in ${BASELINE_DAYS} days`); }
+  }
+  checkGoalSlots();
+}
+function nextSuggestion(sp) {
+  const have = new Set(S.goals.map(g => g.id)), w = ((S.goalWish || {})[sp] || []).filter(id => !have.has(id));
+  return w[0] || (GOALS.find(L => L.sport === sp && !have.has(L.id)) || {}).id || null;
+}
+function checkGoalSlots() {
+  S.goalSlots ||= {}; S.goalSlotAt ||= {};
+  for (const sp of S.sports) {
+    const act = activeIn(sp); if (!act.length || act.length < capFor(sp) || act.some(g => !g.baselineDate)) continue;
+    const from = [S.goalSlotAt[sp], ...act.map(g => g.since)].filter(Boolean).sort().at(-1);
+    if (daysBetween(from, today()) < SLOT_DAYS) continue;
+    S.goalSlots[sp] = (S.goalSlots[sp] || 0) + 1; S.goalSlotAt[sp] = today();
+    const nx = nextSuggestion(sp);
+    toast(`🔓 New ${SPORTS[sp][1]} goal slot (${capFor(sp)})!${nx ? ` Next up: ${goalDef(nx).name}` : ''}`, true);
   }
 }
 const pendingBaselines = () => S.goals.filter(g => g.status === 'active' && !g.baselineDate).sort((a, b) => daysLeft(a) - daysLeft(b));
@@ -767,7 +792,9 @@ function sportPicker() {
 function goalPicker() {
   const mine = id => S.goals.find(g => g.id === id);
   return S.sports.map(sp => { const list = GOALS.filter(g => g.sport === sp);
-    return `<h3>${sportName(sp)}</h3>${sp === 'hyrox' ? hxDivisionPicker() : ''}<div class="chips ${sp === 'hyrox' ? 'hxchips' : ''}">${list.map(L => `<button class="chip btn ${mine(L.id) ? 'on' : ''}" onclick="toggleGoal('${L.id}')">${mine(L.id) ? '✓ ' : ''}${L.name}${L.type === 'build' ? ' <em>build-up</em>' : ''}</button>`).join('')}</div>
+    const n = activeIn(sp).length, cap = capFor(sp), wish = ((S.goalWish || {})[sp] || []).filter(id => !mine(id)), nx = n < cap && (S.goalSlots || {})[sp] ? nextSuggestion(sp) : null;
+    return `<h3 class="caph">${sportName(sp)} <span class="capct ${n > cap ? 'over' : n === cap ? 'full' : ''}">Goals ${n}/${cap}</span></h3>${(S.goalOverride || {})[sp] ? `<p class="capwarn">⚠️ Over the cap: ${sportName(sp)} Earned It badge forfeited</p>` : ''}
+      ${wish.length ? `<div class="wishrow"><small>📝 Wishlist</small>${wish.map(id => `<span class="wchip ${id === nx ? 'next' : ''}">${goalDef(id).name}${id === nx ? ' · next up' : ''}<button onclick="unwish('${id}')" aria-label="remove">✕</button></span>`).join('')}</div>` : nx ? `<p class="muted small">🔓 Slot free. Suggested next: <b>${goalDef(nx).name}</b></p>` : ''}${sp === 'hyrox' ? hxDivisionPicker() : ''}<div class="chips ${sp === 'hyrox' ? 'hxchips' : ''}">${list.map(L => `<button class="chip btn ${mine(L.id) ? 'on' : ''}" onclick="toggleGoal('${L.id}')">${mine(L.id) ? (mine(L.id).overridden ? '⚠️ ' : '✓ ') : ''}${L.name}${L.type === 'build' ? ' <em>build-up</em>' : ''}</button>`).join('')}</div>
       ${S.goals.filter(g => goalDef(g.id).sport === sp).map(g => { const L = goalDef(g.id);
         return `<div class="gtgt"><span>${L.name}</span><label>Target <input ${isTimeKind(L) ? 'type="text" inputmode="text" placeholder="mm:ss"' : 'type="number" step="any"'} value="${isTimeKind(L) ? fmtTime(g.target) : g.target}" onchange="setGoalTarget('${g.id}',this.value)"> ${isTimeKind(L) ? '' : KINDS[L.kind].unit}</label></div>`; }).join('')}`; }).join('') || '<p class="muted">Pick at least one sport first.</p>';
 }
@@ -827,12 +854,12 @@ const VIEWS = {
     if (R.ex) return goalView(R.ex);
     const act = activeGoals(S), parked = S.goals.filter(g => g.status === 'parked');
     const row = g => { const L = goalDef(g.id), b = bestKey(g.id), last = sessionsFor(g.id).at(-1), p = goalProgress(g), pend = g.status === 'active' && !g.baselineDate;
-      return `<button class="exrow ${g.status} ${L.hx ? 'hx' : ''}" onclick="go('train',{ex:'${g.id}'})"><div class="exm"><b>${L.name}${L.type === 'build' ? ' <em class="tag">build-up</em>' : ''}</b>${L.station && hxWeight(L.station) ? `<small class="hxw">${hxWeight(L.station)}</small>` : ''}
+      return `<button class="exrow ${g.status} ${L.hx ? 'hx' : ''}" onclick="go('train',{ex:'${g.id}'})"><div class="exm"><b>${L.name}${L.type === 'build' ? ' <em class="tag">build-up</em>' : ''}${g.overridden ? ' <em class="tag warn">over cap</em>' : ''}</b>${L.station && hxWeight(L.station) ? `<small class="hxw">${hxWeight(L.station)}</small>` : ''}
         <small>${pend ? `🎯 ${daysLeft(g)}d left for a baseline` : g.status === 'parked' ? 'Parked · tap to re-activate' : `${last ? `Last ${fmtDate(last.date)} · ` : ''}${L.type === 'build' && b == null ? `Longest ${fmtNum(longestIn(L.sport))} of ${L.dist} km` : `PB ${fmtVal(L, b)} → ${fmtVal(L, g.target)}`}`}</small>
         <div class="bar"><i style="width:${p * 100}%"></i></div></div>${sparkline(g.id)}<span class="pct">${Math.round(p * 100)}%</span></button>`; };
     const sports = [...new Set(act.map(g => goalDef(g.id).sport))];
     return `<div class="ph"><h2>Goals</h2><button class="sm" onclick="go('goals')">+ Edit goals</button></div>
-      ${S.sports.includes('hyrox') ? hxRacesPanel() : ''}${sports.map(sp => `<h3>${sportName(sp)}</h3>${act.filter(g => goalDef(g.id).sport === sp).map(row).join('')}`).join('') || '<p class="muted">No active goals. Add some.</p>'}
+      ${S.sports.includes('hyrox') ? hxRacesPanel() : ''}${sports.map(sp => `<h3 class="caph">${sportName(sp)} <span class="capct ${activeIn(sp).length > capFor(sp) ? 'over' : ''}">Goals ${activeIn(sp).length}/${capFor(sp)}</span></h3>${act.filter(g => goalDef(g.id).sport === sp).map(row).join('')}`).join('') || '<p class="muted">No active goals. Add some.</p>'}
       ${parked.length ? `<h3>⏸️ Parked <small>no baseline in ${BASELINE_DAYS} days · not in your rating</small></h3>${parked.map(g => `<div class="parkrow">${row(g)}<button class="sm ghost" onclick="reactivateGoal('${g.id}')">Re-activate</button></div>`).join('')}` : ''}`;
   },
   goals() {
@@ -1207,9 +1234,23 @@ window.toggleSport = k => { S.sports = S.sports.includes(k) ? S.sports.filter(x 
 window.toggleGoal = id => {
   const g = S.goals.find(x => x.id === id);
   if (g) { if (sessionsFor(id).length && !confirm('Remove this goal? Your attempts are kept.')) return; S.goals = S.goals.filter(x => x.id !== id); }
-  else S.goals.push(newGoal(id, S.persona));
+  else {
+    const sp = goalDef(id).sport;
+    if (activeIn(sp).length >= capFor(sp)) return capModal(id);
+    S.goals.push(newGoal(id, S.persona)); S.goalWish[sp] = (S.goalWish[sp] || []).filter(x => x !== id);
+  }
   save(); render();
 };
+function capModal(id) {
+  const L = goalDef(id), sp = L.sport, n = SPORTS[sp][1];
+  modal(`<div class="capmodal"><div class="capic">🧱</div><h2>Are you sure?</h2><p><b>Building up works better.</b> You already have ${activeIn(sp).length}/${capFor(sp)} ${n.toLowerCase()} goals. Lock in their baselines, and after 2 weeks you earn another slot.</p>
+    <button class="wide" onclick="capWish('${id}')">Build up instead</button><p class="muted small">Adds <b>${L.name}</b> to your ${n} wishlist. We'll suggest it when the slot unlocks.</p>
+    <button class="wide ghost" onclick="capOverride('${id}')">Override</button><p class="muted small">⚠️ Adds it now, but you give up the <b>Earned It: ${n}</b> badge.</p></div>`);
+}
+window.capWish = id => { const sp = goalDef(id).sport; S.goalWish[sp] = [...new Set([...(S.goalWish[sp] || []), id])]; save(); closeModal(); render(); toast(`📝 ${goalDef(id).name} added to your ${SPORTS[sp][1]} wishlist`, true); };
+window.capOverride = id => { const sp = goalDef(id).sport, g = newGoal(id, S.persona); g.overridden = true; S.goals.push(g); S.goalOverride[sp] = true;
+  S.goalWish[sp] = (S.goalWish[sp] || []).filter(x => x !== id); save(); closeModal(); render(); toast(`⚠️ Over the ${SPORTS[sp][1]} goal cap. Earned It badge forfeited`, true); };
+window.unwish = id => { const sp = goalDef(id).sport; S.goalWish[sp] = (S.goalWish[sp] || []).filter(x => x !== id); save(); render(); };
 window.setGoalTarget = (id, v) => { const g = S.goals.find(x => x.id === id), L = goalDef(id); g.target = isTimeKind(L) ? parseTime(v) : parseFloat(v); g.targetEdited = true; save(); };
 window.reactivateGoal = id => { const g = S.goals.find(x => x.id === id); Object.assign(g, { status: 'active', since: today(), baselineDate: null, parkedOn: null }); save(); render(); toast(`🎯 ${goalDef(id).name} is back. ${BASELINE_DAYS} days to set a baseline.`); };
 window.removeEx = id => { if (!confirm('Remove this goal? Attempts are kept.')) return; S.goals = S.goals.filter(e => e.id !== id); save(); go('train'); };
@@ -1321,7 +1362,7 @@ async function seedDemo() {
     S.log.push({ date: d, ovr: 0, ftp: S.metrics.ftp.current, weight: S.metrics.weight.current });
     if (i % 7 === 6) { todayOverride = addDays(d, 1); evaluateHabitWeeks(); todayOverride = null; }
   }
-  S.goals = ['run_5k', 'run_21', 'cyc_ftp', 'cyc_5min', 'cyc_100', 'swim_400', 'swim_1900', 'str_trapdl_1', 'str_bench_5', 'bw_pullup', 'bw_plank', 'hx_ski', 'hx_push', 'hx_pull', 'hx_bbj', 'hx_row', 'hx_farmers', 'hx_lunges', 'hx_wb', 'hx_run', 'hx_rox', 'hx_full'].map(id => ({ ...newGoal(id, 'athlete'), since: start }));
+  S.goals = ['run_5k', 'run_21', 'cyc_ftp', 'cyc_100', 'swim_400', 'swim_1900', 'str_trapdl_1', 'str_bench_5', 'bw_pullup', 'bw_plank', 'hx_full', 'hx_run', 'hx_push'].map(id => ({ ...newGoal(id, 'athlete'), since: start }));
   // [goal, start value, change per week (negative = faster)]
   const plan = { run_5k: [Tm(29, 40), -14], cyc_ftp: [253, 2.6], cyc_5min: [300, 4], swim_400: [Tm(9, 20), -6], str_trapdl_1: [130, 2], str_bench_5: [65, 0.8], bw_pullup: [4, 0.4], bw_plank: [60, 9] };
   for (const [id, [b, step]] of Object.entries(plan)) {
@@ -1361,6 +1402,7 @@ async function seedDemo() {
   delete S.habits.days[today()];
   S.challenge.day = 18; S.challenge.lastDate = addDays(today(), -1); S.challenge.startDate = addDays(today(), -18);
   if (S.habits.slots > S.habits.active.length) S.habits.active.push('steps');
+  S.goalWish = { cycle: ['cyc_5min'], hyrox: ['hx_rox', 'hx_wb'], strength: ['str_bench_1'] };
   S.habits.wishlist = [{ id: 'w_acv', label: 'Apple cider vinegar' }, { id: 'w_multi', label: 'Multivitamin' }];
   S.upgraded = false; S.hintSeen = true; checkBadges();
   try { await new Promise(r => { const q = indexedDB.deleteDatabase('fitquest-photos'); q.onsuccess = q.onerror = q.onblocked = r; }); idb.db = null; } catch (e) {}

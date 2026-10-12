@@ -95,3 +95,11 @@ Matt found the v2 metrics too broad, so tracking is now built around **specific 
 - **Chart** `raceChart(cur, prev)`: two stacked SVG bars (runs grey, stations yellow, roxzone orange) for this race vs the previous one, plus a split table with the delta and 🏆 marks. It shows on the reward screen and in Train → Hyrox races.
 - **Accent**: `.hx` / `.hxpanel` use #ffe000 on black.
 - **Badges**: First Hyrox, Half-sim, Sub-90, Sub-75, Station Sweep (8 station PBs in one race). **Kit**: Hyrox vest (yellow/black, "HYROX"), unlocked by First Hyrox and auto-equipped.
+
+## Goal cap (v3.3)
+- **Cap:** each sport allows 3 active goals (`GOAL_CAP`). `capFor(sp)` adds any slots earned in `S.goalSlots[sp]`. Parked goals don't count. Each sport header in onboarding, Sports & goals (Settings) and Train shows a **Goals n/cap** pill: amber when full, red when over.
+- **4th pick:** opens a modal, "Are you sure? Building up works better."
+  - **Build up instead** (primary) puts the goal in `S.goalWish[sp]`. The wishlist appears as chips under the sport.
+  - **Override** (secondary) adds the goal with `overridden: true` and sets `S.goalOverride[sp]`, which gives up that sport's **Earned It** badge. It also shows a warning bar, an "over cap" tag on the row and a toast.
+- **Earning slots:** `checkGoalSlots()` runs after `updateBaselines()`. When every active goal in a sport has a baseline and 14 days have passed since the later of the newest goal's start or the last unlock, the sport gets +1 slot. A toast names the next goal, taken from the wishlist first and the catalog after that, and the wishlist chip is marked "next up". The `earned_<sport>` badge is "🔓 Earned It: <Sport>".
+- **Defaults and migration:** the defaults are ≤3 per sport (run 5k/10k/21k, cycle FTP/5-min/100 km, swim 400/CSS/1.9k, strength trap-bar DL, bodyweight pull-ups/plank). The demo has ≤3 per sport, with a wishlist. Saves without `capChecked` keep every goal; goals beyond the 3rd in a sport get `overridden` and the sport is flagged as overridden.
