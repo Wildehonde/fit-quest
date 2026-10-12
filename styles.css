@@ -186,3 +186,46 @@ details.more{margin-top:12px}details.more summary{padding:10px 0;color:var(--mut
 .bl b{font-weight:600;flex:1}.bl i{font-style:normal;color:var(--muted)}.bl.urgent{border:2px solid var(--bad);background:rgba(255,77,109,.1)}.bl.urgent i{color:var(--bad)}
 .implied{padding:10px 12px;border-radius:12px;background:rgba(46,229,157,.08);border:1px dashed var(--good);margin-bottom:6px;font-size:14px}
 .picks.one{grid-template-columns:1fr;margin-bottom:4px}.pick.gen{border-style:dashed}.pick.need{border-color:var(--acc2)}
+/* ===== Avatar (bobblehead) ===== */
+.card .ctop{position:relative;z-index:2}
+.cav{position:absolute;left:50%;top:11%;transform:translateX(-22%);width:46%;z-index:1;pointer-events:none}
+.cav svg{width:100%;height:auto;display:block;filter:drop-shadow(0 6px 10px rgba(0,0,0,.25))}
+.stagetag{position:absolute;right:16px;top:44%;z-index:2;font:800 11px var(--cond);letter-spacing:1.5px;text-transform:uppercase;background:rgba(0,0,0,.18);padding:3px 8px;border-radius:999px}
+.card .name,.card .stats{position:relative;z-index:2}
+svg.av [data-to]{transition:transform 1.4s cubic-bezier(.3,1.35,.5,1)}
+svg.av .head,svg.av .body,svg.av .arm,svg.av .eyes,svg.av .shadow,svg.av .cf{transform-box:view-box}
+svg.av .head{transform-origin:100px 130px;animation:avBob 3.2s ease-in-out infinite}
+svg.av .body{transform-origin:100px 260px;animation:avBreathe 3.2s ease-in-out infinite}
+svg.av .shadow{transform-origin:100px 268px;animation:avShadow 3.2s ease-in-out infinite}
+svg.av .eyes{transform-origin:100px 82px;animation:avBlink 5s infinite}
+@keyframes avBob{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-4px) rotate(1.5deg)}}
+@keyframes avBreathe{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.025)}}
+@keyframes avShadow{0%,100%{transform:scaleX(1)}50%{transform:scaleX(.94)}}
+@keyframes avBlink{0%,46%,50%,100%{transform:scaleY(1)}48%{transform:scaleY(.1)}}
+/* celebration: jump, arms up, confetti */
+svg.av.celebrate .head,svg.av.celebrate .body{animation:avJump .9s cubic-bezier(.3,1.6,.5,1) infinite}
+svg.av.celebrate .shadow{animation:avJumpShadow .9s ease-in-out infinite}
+svg.av.celebrate .arm{transition:transform .4s;animation:avCheer .9s ease-in-out infinite}
+svg.av.celebrate .arm.r{--a:150deg}svg.av.celebrate .arm.l{--a:-150deg}
+svg.av .cf{animation:avConfetti 1.6s linear infinite}
+@keyframes avJump{0%,100%{transform:translateY(0)}40%{transform:translateY(-18px)}}
+@keyframes avJumpShadow{0%,100%{transform:scaleX(1);opacity:.25}40%{transform:scaleX(.7);opacity:.12}}
+@keyframes avCheer{0%,100%{transform:rotate(var(--a))}50%{transform:rotate(calc(var(--a) * .82))}}
+@keyframes avConfetti{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),300px) rotate(540deg);opacity:0}}
+/* slump: streak broke */
+svg.av.slump .head{animation:avSlumpHead 4s ease-in-out infinite}
+svg.av.slump .body{animation:none;transform:scaleY(.96)}
+svg.av.slump .arm.r{transform:rotate(8deg)}svg.av.slump .arm.l{transform:rotate(-8deg)}
+svg.av.slump{filter:saturate(.55)}
+svg.av .tear{animation:avTear 2.4s ease-in infinite}
+@keyframes avSlumpHead{0%,100%{transform:translateY(6px) rotate(-7deg)}50%{transform:translateY(8px) rotate(-5deg)}}
+@keyframes avTear{0%{transform:translateY(0);opacity:0}20%{opacity:1}100%{transform:translateY(22px);opacity:0}}
+svg.av.static *{animation:none!important}
+.rav{position:relative;display:flex;justify-content:center;margin-bottom:-6px}
+.avprev{display:flex;justify-content:center;background:radial-gradient(circle at 50% 60%,#2a3150,var(--panel2) 70%);border-radius:14px;margin-bottom:10px;padding:6px}
+.avedit label{margin:10px 0 6px}
+.sw{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}.sw button{width:34px;height:34px;min-height:0;padding:0;border-radius:50%;border:3px solid transparent}.sw button.on{border-color:#fff;box-shadow:0 0 0 2px var(--acc)}
+.kit{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kit button{flex-direction:column;align-items:flex-start;text-align:left;background:var(--panel2);border:2px solid transparent;color:var(--text);padding:10px;min-height:70px;gap:1px}
+.kit button span{font-size:22px}.kit button b{font-size:13px}.kit button small{font-size:11px;color:var(--muted);font-weight:400}.kit button.on{border-color:var(--good)}.kit button.locked{opacity:.5}
+@media (prefers-reduced-motion:reduce){svg.av *{animation:none!important;transition:none!important}}
+.card .name{text-shadow:0 2px 0 rgba(255,255,255,.35)}

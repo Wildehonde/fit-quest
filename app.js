@@ -156,7 +156,7 @@ function freshState() {
     sports: [...DEFAULT_SPORTS], goals: seedGoals(), everParked: false, sessions: [], pbCount: 0,
     habits: { active: HABITS.filter(h => h.core).map(h => h.id), slots: 3, earnedSlots: 0, wishlist: [], paused: [],
       days: {}, start: today(), evaluatedTo: null, weakWeeks: 0, override: false, weekLog: [] },
-    photoCount: 0, photoWeeks: 0, share: { weight: false, photo: false } };
+    photoCount: 0, photoWeeks: 0, share: { weight: false, photo: false }, prosthetic: 'left' }; // Matt: LEFT below-knee prosthetic
 }
 // Fill any missing fields from a fresh state (v1 data, v2 exercise data, older v3 saves).
 function migrate(old) {
@@ -276,6 +276,7 @@ function addXP(base, why, quiet) {
   const before = levelInfo(S.xp).level;
   S.xp += gained;
   const after = levelInfo(S.xp).level;
+  if (after > before) celebrate();
   if (!quiet) toast(after > before ? `LEVEL UP! Level ${after} 🎉` : `+${gained} XP · ${why}`);
   return gained;
 }
@@ -285,6 +286,7 @@ function applyMissedDays() {
   if (S.lastCheckin) {
     const missed = daysBetween(S.lastCheckin, today()) - 1;
     if (missed > 0 && !S._penalised?.[today()]) {
+      if (P.streakBreaks && S.streak > 0) S.slumpDate = today();
       if (P.streakBreaks) S.streak = 0;
       if (P.missPenalty) S.xp = Math.max(0, S.xp - P.missPenalty * missed);
       S._penalised = { [today()]: true };
@@ -310,6 +312,7 @@ function checkBadges() {
   for (const [id, [icon, title, test]] of Object.entries(BADGES)) {
     if (!S.badges.includes(id) && test(S)) { S.badges.push(id); S.lastUnlock = `${icon} ${title}`; if (R.tab !== 'log') setTimeout(() => toast(`${icon} Badge unlocked: ${title}`), 1400); }
   }
+  const kit = syncKit(); if (kit.length) { S.newKit = [...(S.newKit || []), ...kit]; if (R.tab !== 'log') setTimeout(() => toast(`🎁 Avatar kit unlocked: ${kit.join(', ')}`), 2200); }
 }
 function setPersona(p) {
   const prev = S.persona;
@@ -523,17 +526,19 @@ async function drawShare(fmt, theme, opt) {
   const shadow = on => { if (on && (sticker || photoBg)) { g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 18; g.shadowOffsetY = 3; } else { g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0; } };
   shadow(true); g.textBaseline = 'alphabetic';
   const r = overall(S), li = levelInfo(S.xp), P = PERSONAS[S.persona];
-  const story = fmt === 'story', top = story ? 300 : 110, cx = W / 2;
+  const story = fmt === 'story', top = story ? 170 : 110, cx = W / 2;
+  const avImg = await avatarImage(opt.mood || 'idle');
   g.textAlign = 'center';
   g.font = F(800, 54); const w1 = g.measureText('FIT').width, w2 = g.measureText('QUEST').width; g.textAlign = 'left';
   g.fillStyle = txt; g.fillText('FIT', cx - (w1 + w2) / 2, top); g.fillStyle = ACC; g.fillText('QUEST', cx - (w1 + w2) / 2 + w1, top); g.textAlign = 'center';
   g.fillStyle = sub2; g.font = F(600, 36); g.fillText(`${tier(r).toUpperCase()} CARD · ${P.name.toUpperCase()} MODE`, cx, top + 60);
-  g.fillStyle = txt; g.font = F(900, story ? 420 : 300); g.fillText(r, cx, top + (story ? 450 : 330));
-  g.fillStyle = ACC; g.font = F(800, 52); g.fillText('OVERALL RATING', cx, top + (story ? 525 : 395));
+  if (avImg) { shadow(true); if (story) g.drawImage(avImg, cx - 170, top + 90, 340, 476); else g.drawImage(avImg, W - 290, 130, 240, 336); }
+  g.fillStyle = txt; g.font = F(900, story ? 360 : 300); g.fillText(r, story ? cx : cx - 90, top + (story ? 870 : 330));
+  g.fillStyle = ACC; g.font = F(800, 52); g.fillText('OVERALL RATING', story ? cx : cx - 90, top + (story ? 940 : 395));
   const items = [[li.level, 'LEVEL'], [S.streak, 'DAY STREAK'], [`${S.challenge.day}/${IRON[S.persona].days}`, 'IRON DAYS']];
   if (opt.weight) items.push([S.metrics.weight.current, 'KG']);
   items.push([wkg(S).toFixed(2), 'W/KG']);
-  const rowY = top + (story ? 760 : 560), colW = W / Math.min(items.length, story ? 3 : 5);
+  const rowY = top + (story ? 1110 : 560), colW = W / Math.min(items.length, story ? 3 : 5);
   items.forEach(([v, l], i) => {
     const per = story ? 3 : 5, row = Math.floor(i / per), inRow = Math.min(per, items.length - row * per), x = W / 2 + ((i % per) - (inRow - 1) / 2) * colW;
     const y = rowY + row * 230;
@@ -541,7 +546,7 @@ async function drawShare(fmt, theme, opt) {
   });
   const unlock = S.lastUnlock || (S.badges.length ? BADGES[S.badges.at(-1)][0] + ' ' + BADGES[S.badges.at(-1)][1] : null);
   if (unlock) {
-    const y = story ? H - 380 : H - 150; shadow(false);
+    const y = story ? H - 250 : H - 150; shadow(false);
     if (!sticker) { g.fillStyle = photoBg ? 'rgba(0,0,0,.45)' : light ? '#11131a' : 'rgba(255,255,255,.08)'; roundRect(g, cx - 380, y - 70, 760, 110, 55); g.fill(); }
     shadow(true); g.fillStyle = sticker ? '#fff' : light ? '#fff' : '#fff'; g.font = F(800, 50); g.fillText(`NEW: ${unlock.toUpperCase()}`, cx, y + 4);
   }
@@ -549,6 +554,125 @@ async function drawShare(fmt, theme, opt) {
   return c;
 }
 function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+
+/* ---------- 9b) AVATAR (bobblehead caricature, inline SVG + CSS animation) ---------- */
+const AV_STAGES = [ // soft round build -> lean muscular athlete. Rating thresholds below.
+  { min: 0,  name: 'Couch Starter',  torso: 1.32, belly: 1.12, sh: 0.6,  bi: 0.55, abs: 0,    cheek: 1.09, leg: 1.18 },
+  { min: 55, name: 'Getting Going',  torso: 1.18, belly: 0.78, sh: 0.76, bi: 0.72, abs: 0,    cheek: 1.05, leg: 1.09 },
+  { min: 62, name: 'Solid',          torso: 1.03, belly: 0.45, sh: 0.9,  bi: 0.9,  abs: 0.25, cheek: 1.0,  leg: 1.0 },
+  { min: 70, name: 'Athlete',        torso: 0.96, belly: 0.18, sh: 1.05, bi: 1.08, abs: 0.6,  cheek: 0.97, leg: 0.97 },
+  { min: 80, name: 'Elite Machine',  torso: 0.92, belly: 0,    sh: 1.32, bi: 1.38, abs: 0.95, cheek: 0.95, leg: 0.95 },
+];
+const avStage = r => AV_STAGES.reduce((a, s, i) => r >= s.min ? i : a, 0);
+const SKINS = ['#f7d7bd', '#efc19c', '#d9a074', '#b07a52', '#7d5236', '#55372a'];
+const HAIRS = { short: 'Short', buzz: 'Buzz cut', curly: 'Curly', swept: 'Swept back', bald: 'Bald' };
+const HAIR_COLS = ['#2b1d14', '#5a3a22', '#8a5a2b', '#c99a4a', '#9a9a9a', '#b8381e'];
+const BEARDS = { none: 'Clean', stubble: 'Stubble', short: 'Short beard', full: 'Full beard', goatee: 'Goatee' };
+// Kit: [label, icon, unlock text, test(state)]
+const KIT = {
+  headband: ['Headband', '🎽', 'Reach level 2', s => levelInfo(s.xp).level >= 2],
+  shades:   ['Race shades', '🕶️', 'Set your first PB', s => s.badges.includes('firstpb')],
+  wrist:    ['Sweatbands', '💪', '7-day streak', s => s.badges.includes('streak7')],
+  trisuit:  ['Tri suit', '🩱', 'Reach level 5', s => levelInfo(s.xp).level >= 5],
+  helmet:   ['Cycling helmet', '⛑️', 'FTP 260W or level 7', s => s.badges.includes('ftp260') || levelInfo(s.xp).level >= 7],
+  bike:     ['Tri bike', '🚲', 'Reach level 8', s => levelInfo(s.xp).level >= 8],
+  medal:    ['Finisher medal', '🏅', 'Finish Iron or a build-up distance, or lock in all baselines', s => ['ironDone', 'finisher', 'baselines'].some(b => s.badges.includes(b))],
+  hoodie:   ['Goggins hoodie', '💀', 'Goggins mode + 7-day streak', s => s.persona === 'goggins' && s.badges.includes('streak7')],
+  blade:    ['Carbon running blade', '🦿', 'Reach level 12', s => levelInfo(s.xp).level >= 12],
+};
+const avDefaults = () => ({ skin: SKINS[1], hair: 'short', hairCol: HAIR_COLS[1], beard: 'stubble', kit: {}, seen: [] });
+function avatarState() { S.avatar = { ...avDefaults(), ...(S.avatar || {}) }; return S.avatar; }
+// Newly unlocked kit is equipped automatically once (the user can take it off in Settings)
+function syncKit() {
+  const A = avatarState(), fresh = [];
+  for (const [k, [n, , , t]] of Object.entries(KIT)) if (t(S) && !A.seen.includes(k)) { A.seen.push(k); A.kit[k] = true; if (k === 'helmet') A.kit.headband = false; fresh.push(n); }
+  if (fresh.length) S.lastUnlock = `${KIT[Object.keys(KIT).find(k => KIT[k][0] === fresh.at(-1))][1]} ${fresh.at(-1)}`;
+  return fresh;
+}
+const kitOn = k => KIT[k][3](S) && avatarState().kit[k];
+const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255].map(v => Math.max(0, Math.min(255, Math.round(v * f)))); return '#' + c.map(v => v.toString(16).padStart(2, '0')).join(''); };
+// o: { stage, from (stage to animate from), mood: idle|celebrate|slump, size, static (no anim), kit override }
+function avatarSVG(o = {}) {
+  const A = avatarState(), st = AV_STAGES[o.stage ?? avStage(overall(S))], fr = AV_STAGES[o.from ?? o.stage ?? avStage(overall(S))];
+  const kit = o.kit || Object.fromEntries(Object.keys(KIT).map(k => [k, kitOn(k)]));
+  const skin = A.skin, skinD = shade(skin, 0.86), hair = A.hairCol, side = S.prosthetic || 'left';
+  const shirt = kit.hoodie ? '#474c59' : kit.trisuit ? '#1f2c5e' : '#ff5a1f', shirtD = shade(shirt, 0.82), shorts = kit.trisuit ? '#1f2c5e' : '#232838';
+  // animated parts: style = "from" values, data-to = target values (render() swaps them so stage changes ease)
+  const T = (id, f, t, origin) => `style="transform-origin:${origin};transform:${f}" data-to="${t}" data-av="${id}"`;
+  const torsoT = s => `scaleX(${s.torso})`, bellyT = s => `scale(${s.belly})`, shT = s => `scale(${s.sh})`, biT = s => `scale(${s.bi})`, cheekT = s => `scaleX(${s.cheek})`;
+  const armDx = s => (s.torso - 1) * 24, legT = s => `scaleX(${s.leg})`;
+  const leg = (x, prost) => {
+    if (!prost) return `<rect x="${x}" y="200" width="15" height="50" rx="6" fill="${skin}"/><path d="M${x - 3},248 h21 a6,6 0 0 1 0,10 h-21 z" fill="#f2f2f2"/><path d="M${x - 3},254 h21" stroke="#ff5a1f" stroke-width="2"/>`;
+    const sock = `<rect x="${x}" y="200" width="15" height="22" rx="6" fill="${skin}"/><rect x="${x - 1}" y="216" width="17" height="15" rx="5" fill="#3a3f4d"/><rect x="${x + 1}" y="218" width="13" height="3" rx="1.5" fill="#5a6070"/>`;
+    if (kit.blade) return `${sock}<path d="M${x + 4},230 C${x + 3},248 ${x + 6},259 ${x + 22},260 L${x + 26},260 C${x + 30},260 ${x + 30},255 ${x + 25},255 C${x + 15},254 ${x + 12},246 ${x + 12},230 Z" fill="#1b1d22"/><path d="M${x + 6},234 C${x + 6},247 ${x + 9},254 ${x + 20},256" stroke="#4b5060" stroke-width="1.2" fill="none"/>`;
+    return `${sock}<rect x="${x + 5}" y="230" width="5" height="20" fill="#b9c0cc"/><rect x="${x + 4}" y="231" width="7" height="3" fill="#8a92a0"/><path d="M${x - 3},248 h21 a6,6 0 0 1 0,10 h-21 z" fill="#f2f2f2"/><path d="M${x - 3},254 h21" stroke="#ff5a1f" stroke-width="2"/>`;
+  };
+  // avatar faces the viewer: the avatar's LEFT leg is on the viewer's RIGHT
+  const legs = leg(84, side === 'right') + leg(102, side === 'left');
+  const arm = (sideX, dir) => { const x = sideX; return `<g class="arm ${dir}" style="transform-origin:${x + 6}px 140px"><g ${T('arm' + dir, `translateX(${dir === 'l' ? -armDx(fr) : armDx(fr)}px)`, `translateX(${dir === 'l' ? -armDx(st) : armDx(st)}px)`, `${x + 6}px 140px`)}>
+      <rect x="${x}" y="136" width="13" height="48" rx="6.5" fill="${skin}"/>
+      <ellipse cx="${x + 6.5}" cy="152" rx="8" ry="10" fill="${skin}" ${T('bi' + dir, biT(fr), biT(st), `${x + 6.5}px 152px`)}/>
+      <rect x="${x - 1}" y="134" width="15" height="${kit.hoodie ? 44 : 14}" rx="6" fill="${kit.trisuit && !kit.hoodie ? skin : shirt}"/>
+      ${kit.wrist ? `<rect x="${x - 1}" y="176" width="15" height="6" rx="2" fill="#ff5a1f"/>` : ''}<circle cx="${x + 6.5}" cy="187" r="7" fill="${skin}"/></g></g>`; };
+  const hairSVG = { short: `<path d="M50,72 C48,30 80,18 104,20 C132,20 154,36 150,72 C146,58 134,46 118,44 C104,52 76,50 62,46 C54,54 52,62 50,72 Z" fill="${hair}"/>`,
+    buzz: `<path d="M52,70 C52,34 78,22 100,22 C124,22 148,34 148,70 C142,52 124,40 100,40 C76,40 58,52 52,70 Z" fill="${hair}" opacity=".75"/>`,
+    curly: [[60, 52], [72, 36], [88, 28], [104, 26], [120, 30], [134, 40], [144, 56], [54, 66], [146, 70], [80, 44], [112, 42]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="13" fill="${hair}"/>`).join(''),
+    swept: `<path d="M50,74 C44,36 76,14 110,18 C140,22 158,44 150,74 C150,60 140,44 120,40 C108,38 96,46 80,44 C66,44 56,56 50,74 Z" fill="${hair}"/><path d="M80,30 C100,22 124,26 138,40" stroke="${shade(hair, 1.4)}" stroke-width="3" fill="none" opacity=".5"/>`,
+    bald: `<ellipse cx="86" cy="40" rx="14" ry="7" fill="#fff" opacity=".25"/>` }[A.hair] || '';
+  const beard = { none: '', stubble: `<path d="M58,92 C62,124 82,136 100,136 C118,136 138,124 142,92 C134,112 120,118 100,118 C80,118 66,112 58,92 Z" fill="${hair}" opacity=".28"/>`,
+    short: `<path d="M56,88 C58,124 80,140 100,140 C120,140 142,124 144,88 C138,108 124,116 100,116 C76,116 62,108 56,88 Z" fill="${hair}" opacity=".85"/>`,
+    full: `<path d="M54,84 C52,128 78,150 100,150 C122,150 148,128 146,84 C140,106 124,114 100,114 C76,114 60,106 54,84 Z" fill="${hair}"/>`,
+    goatee: `<path d="M88,116 C88,132 94,140 100,140 C106,140 112,132 112,116 C106,120 94,120 88,116 Z" fill="${hair}"/>` }[A.beard] || '';
+  const sad = o.mood === 'slump';
+  const mouth = sad ? `<path d="M88,112 Q100,103 112,112" stroke="#5a2a1a" stroke-width="3.5" fill="none" stroke-linecap="round"/>`
+    : o.mood === 'celebrate' ? `<path d="M84,104 Q100,126 116,104 Z" fill="#5a2a1a"/><path d="M90,106 Q100,112 110,106" fill="#fff"/>` : `<path d="M86,106 Q100,120 114,106" stroke="#5a2a1a" stroke-width="3.5" fill="none" stroke-linecap="round"/>`;
+  const eyes = kit.shades ? `<path d="M68,74 h26 a4,4 0 0 1 4,4 v4 a10,10 0 0 1 -10,10 h-12 a10,10 0 0 1 -10,-10 v-4 a4,4 0 0 1 2,-4z M106,74 h26 a4,4 0 0 1 2,4 v4 a10,10 0 0 1 -10,10 h-12 a10,10 0 0 1 -10,-10 v-4 a4,4 0 0 1 4,-4z" fill="#14161c"/><path d="M98,78 h8" stroke="#14161c" stroke-width="3"/><path d="M72,78 l8,0" stroke="#7ad7ff" stroke-width="2" opacity=".7"/>`
+    : `<g class="eyes"><ellipse cx="82" cy="82" rx="6.5" ry="${sad ? 4.5 : 7.5}" fill="#1f1a17"/><ellipse cx="118" cy="82" rx="6.5" ry="${sad ? 4.5 : 7.5}" fill="#1f1a17"/><circle cx="84" cy="79" r="2.2" fill="#fff"/><circle cx="120" cy="79" r="2.2" fill="#fff"/></g>`;
+  const brows = sad ? `<path d="M72,71 L90,65 M110,65 L128,71" stroke="${hair}" stroke-width="4" stroke-linecap="round"/>` : `<path d="M72,${o.mood === 'celebrate' ? 64 : 68} Q82,${o.mood === 'celebrate' ? 59 : 63} 92,68 M108,68 Q118,${o.mood === 'celebrate' ? 59 : 63} 128,${o.mood === 'celebrate' ? 64 : 68}" stroke="${hair}" stroke-width="4" fill="none" stroke-linecap="round"/>`;
+  const helmet = kit.helmet ? `<path d="M46,64 C46,24 76,10 102,10 C134,10 158,28 156,62 C150,56 140,52 126,52 L74,52 C62,52 52,56 46,64 Z" fill="#f4f6fa"/><path d="M60,40 Q80,24 100,22 M84,50 Q94,30 112,22 M110,50 Q122,34 140,32" stroke="#ff5a1f" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M52,66 Q58,100 70,112 M148,66 Q142,100 130,112" stroke="#2a2f3a" stroke-width="2.5" fill="none"/>` : '';
+  const band = kit.headband && !kit.helmet ? `<path d="M50,58 Q100,40 150,58 L150,68 Q100,50 50,68 Z" fill="#ff3b3b"/><path d="M148,60 l14,6 l-6,10 z" fill="#d42c2c"/>` : '';
+  const hood = kit.hoodie ? `<path d="M40,96 C36,40 70,22 100,22 C130,22 164,40 160,96 C158,130 140,140 100,140 C60,140 42,130 40,96 Z" fill="#3c404b"/>` : '';
+  const strings = kit.hoodie ? `<path d="M92,132 v26 M108,132 v26" stroke="#e8e8e8" stroke-width="2"/><text x="100" y="178" font-size="9" font-weight="900" text-anchor="middle" fill="#cfd3dc" font-family="Arial Narrow,Arial,sans-serif" letter-spacing="1">STAY HARD</text>` : '';
+  const medal = kit.medal ? `<path d="M90,128 L100,158 L110,128" stroke="#2f6bff" stroke-width="5" fill="none"/><circle cx="100" cy="162" r="9" fill="#ffc52e" stroke="#d99a00" stroke-width="2"/><text x="100" y="166" font-size="10" text-anchor="middle" font-weight="900" fill="#a86f00">1</text>` : '';
+  const tri = kit.trisuit && !kit.hoodie ? `<path d="M82,130 L82,196 M118,130 L118,196" stroke="#ff5a1f" stroke-width="4"/>` : '';
+  const bike = kit.bike ? `<g class="bike" opacity=".95"><circle cx="30" cy="244" r="20" fill="none" stroke="#2a2f3a" stroke-width="5"/><circle cx="170" cy="244" r="20" fill="none" stroke="#2a2f3a" stroke-width="5"/>
+      <circle cx="30" cy="244" r="20" fill="none" stroke="#9aa3b8" stroke-width="1" stroke-dasharray="2 5"/><circle cx="170" cy="244" r="20" fill="none" stroke="#9aa3b8" stroke-width="1" stroke-dasharray="2 5"/>
+      <path d="M30,244 L62,212 L150,212 L170,244 M62,212 L80,244 L150,212 M150,212 L146,198 L160,196" stroke="#ff5a1f" stroke-width="5" fill="none" stroke-linejoin="round" stroke-linecap="round"/><rect x="54" y="204" width="20" height="5" rx="2.5" fill="#1b1d22"/></g>` : '';
+  const confetti = o.mood === 'celebrate' && !o.static ? [...Array(14)].map((_, i) => `<rect class="cf" x="${20 + (i * 37) % 160}" y="-10" width="6" height="10" rx="1.5" fill="${['#ff5a1f', '#ffb020', '#2ee59d', '#5aa9ff', '#ff3df2'][i % 5]}" style="animation-delay:${(i % 7) * 0.13}s;--dx:${(i % 2 ? 1 : -1) * (6 + i % 5 * 3)}px"/>`).join('') : '';
+  return `<svg class="av ${o.mood || 'idle'} ${o.static ? 'static' : ''}" viewBox="0 0 200 280" ${o.size ? `width="${o.size * 200 / 280}" height="${o.size}"` : ''} xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Avatar, ${st.name}">
+    <ellipse class="shadow" cx="100" cy="268" rx="50" ry="7" fill="#000" opacity=".25"/>${bike}
+    <g class="body"><g ${T('legs', legT(fr), legT(st), '100px 230px')}>${legs}</g>
+      <path d="M78,192 h44 v14 a5,5 0 0 1 -5,5 h-12 l-5,-6 l-5,6 h-12 a5,5 0 0 1 -5,-5 z" fill="${shorts}"/>
+      ${arm(64, 'r')}${arm(123, 'l')}
+      <g class="torso" ${T('torso', torsoT(fr), torsoT(st), '100px 196px')}>
+        <rect x="76" y="126" width="48" height="72" rx="18" fill="${shirt}"/>
+        <ellipse cx="100" cy="176" rx="27" ry="19" fill="${shirtD}" ${T('belly', bellyT(fr), bellyT(st), '100px 170px')}/>
+        <g opacity="${st.abs}" class="abs"><path d="M88,142 Q94,148 100,144 Q106,148 112,142" stroke="${shirtD}" stroke-width="2.5" fill="none"/><path d="M100,150 v32 M92,160 h16 M93,171 h14" stroke="${shirtD}" stroke-width="2" stroke-linecap="round"/></g>
+        ${tri}${strings}${medal}</g>
+      <circle cx="76" cy="138" r="12" fill="${kit.trisuit && !kit.hoodie ? skin : shirt}" ${T('shr', shT(fr), shT(st), '76px 140px')}/><circle cx="124" cy="138" r="12" fill="${kit.trisuit && !kit.hoodie ? skin : shirt}" ${T('shl', shT(fr), shT(st), '124px 140px')}/>
+    </g>
+    <g class="head">${hood}<rect x="91" y="118" width="18" height="14" fill="${skinD}"/>
+      <g ${T('cheek', cheekT(fr), cheekT(st), '100px 80px')}><circle cx="50" cy="86" r="10" fill="${skinD}"/><circle cx="150" cy="86" r="10" fill="${skinD}"/>
+      <ellipse cx="100" cy="80" rx="50" ry="54" fill="${skin}"/>${beard}<circle cx="70" cy="100" r="8" fill="#ff7a7a" opacity=".3"/><circle cx="130" cy="100" r="8" fill="#ff7a7a" opacity=".3"/></g>
+      ${hairSVG}${band}${helmet}${brows}${eyes}<path d="M97,92 Q100,98 104,93" stroke="${skinD}" stroke-width="3" fill="none" stroke-linecap="round"/>${mouth}
+      ${sad ? '<path d="M128,92 q3,8 0,10 q-3,-2 0,-10z" fill="#7ad7ff" class="tear"/>' : ''}</g>${confetti}</svg>`;
+}
+// After render: ease any avatar from the last shown stage to the current one
+function settleAvatars() {
+  const els = document.querySelectorAll('svg.av [data-to]'); if (!els.length) return;
+  requestAnimationFrame(() => setTimeout(() => els.forEach(e => { e.style.transform = e.dataset.to; }), 60));
+  const cur = avStage(overall(S)); if (S.avShown !== cur) { S.avShown = cur; save(); }
+}
+function avMood() {
+  if (S.celebrateUntil && Date.now() < S.celebrateUntil) return 'celebrate';
+  if (S.slumpDate === today() && !S.sessions.some(x => x.date === today())) return 'slump';
+  return 'idle';
+}
+const celebrate = () => { S.celebrateUntil = Date.now() + 15 * 60 * 1000; };
+function avatarImage(mood = 'idle') { // static SVG -> Image, for canvas share cards
+  const cur = avatarSVG({ mood, static: true, from: avStage(overall(S)) });
+  return new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(cur); });
+}
 
 /* ---------- 10) VIEWS ---------- */
 const $ = sel => document.querySelector(sel);
@@ -566,7 +690,7 @@ function render() {
   const li = levelInfo(S.xp);
   $('#levelbox').innerHTML = on ? `<div class="lvl"><b>LV ${li.level}</b><span>${S.xp.toLocaleString()} XP</span></div><div class="xpbar"><i style="width:${li.pct}%"></i></div><small>${li.toNext} XP to LV ${li.level + 1}</small>` : '';
   $('#view').innerHTML = on ? VIEWS[R.tab]() : onboarding();
-  AFTER[R.tab]?.();
+  AFTER[R.tab]?.(); settleAvatars();
 }
 
 function modePicker(sel, fn) {
@@ -617,6 +741,7 @@ function athleteCard() {
   const r = overall(S), st = stats(S), t = tier(r), P = PERSONAS[S.persona];
   return `<div class="card ${t}"><div class="shine"></div>
     <div class="ctop"><div><div class="ovr">${r}</div><div class="ovl">OVR</div></div><div class="tier">${t.toUpperCase()}<br><span>${P.icon} ${P.name.toUpperCase()}</span></div></div>
+    <div class="cav">${avatarSVG({ mood: avMood(), from: S.avShown ?? avStage(r) })}</div><div class="stagetag">${AV_STAGES[avStage(r)].name}</div>
     <div class="name">${esc(S.name)}</div>
     <div class="stats">${Object.entries(st).map(([k, v]) => `<div><b>${statRating(v)}</b>${k}</div>`).join('')}<div><b>${wkg(S).toFixed(2)}</b>W/KG</div></div></div>`;
 }
@@ -753,7 +878,7 @@ VIEWS.home = () => {
 };
 // pre: optional goal id, or 'session:<sport>' to open a general session
 window.startLog = pre => {
-  F = { step: 1, q: null, sel: [], sets: {}, sport: S.sports[0] || 'run', startXP: S.xp, startBadges: [...S.badges], startSlots: S.habits.slots, startLevel: levelInfo(S.xp).level, startWeight: S.metrics.weight.current };
+  S.newKit = []; F = { step: 1, q: null, sel: [], sets: {}, sport: S.sports[0] || 'run', startXP: S.xp, startBadges: [...S.badges], startSlots: S.habits.slots, startLevel: levelInfo(S.xp).level, startWeight: S.metrics.weight.current };
   if (pre?.startsWith('session:')) { F.sel = ['session']; F.sport = pre.slice(8); F.q = F.sport; } else if (pre) { F.sel = [pre]; F.q = goalDef(pre).sport; }
   go('log');
 };
@@ -798,15 +923,17 @@ VIEWS.log = () => {
       <div class="dock"><button class="wide" onclick="finishLog()">Finish & collect XP 🎉</button></div>`;
   }
   const gained = S.xp - F.startXP, li = levelInfo(S.xp), newB = S.badges.filter(b => !F.startBadges.includes(b));
-  return `<div class="reward"><div class="burst sm"></div><small>WORKOUT LOGGED</small><div class="xpbig">+${gained}<span>XP</span></div>
+  return `<div class="reward"><div class="burst sm"></div><div class="rav">${avatarSVG({ mood: 'celebrate', size: 190 })}</div><small>WORKOUT LOGGED</small><div class="xpbig">+${gained}<span>XP</span></div>
       ${li.level > F.startLevel ? `<div class="lvup">LEVEL UP · LV ${li.level}</div>` : `<div class="muted">Level ${li.level} · ${li.toNext} XP to go</div>`}
       <div class="xpbar"><i style="width:${li.pct}%"></i></div></div>
     <div class="tiles"><div class="tile hot"><b>${S.streak}</b><small>day streak 🔥</small></div><div class="tile"><b>${F.res.filter(x => x.cur.pb).length}</b><small>PBs today</small></div><div class="tile"><b>${overall(S)}</b><small>rating</small></div></div>
     ${F.res.map(({ cur, prev }) => { const L = goalDef(cur.exId); return `<div class="panel ${cur.pb ? 'pbrow' : ''}"><div class="ph"><b>${cur.pb ? '🏆 ' : ''}${cur.exId === 'session' ? sportName(cur.sport) + ' session' : L.name}</b>${cur.pb ? '<span class="pbtag">PB!</span>' : cur.exId !== 'session' ? `<b>${fmtVal(L, cur.key)}</b>` : ''}</div><div class="cmp">${compare(prev, cur, L).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div></div>`; }).join('')}
     ${F.newBaselines?.length ? `<div class="panel"><h3>🎯 Baselines set</h3>${F.newBaselines.map(id => `<div class="unl">✓ ${goalDef(id).name}</div>`).join('')}</div>` : ''}
-    ${newB.length || S.habits.slots > F.startSlots ? `<div class="panel glow"><h3>🔓 Unlocked</h3>${newB.map(b => `<div class="unl">${BADGES[b][0]} ${BADGES[b][1]}</div>`).join('')}${S.habits.slots > F.startSlots ? '<div class="unl">🔓 New habit slot</div>' : ''}</div>` : ''}
+    ${newB.length || S.habits.slots > F.startSlots || S.newKit?.length ? `<div class="panel glow"><h3>🔓 Unlocked</h3>${newB.map(b => `<div class="unl">${BADGES[b][0]} ${BADGES[b][1]}</div>`).join('')}${(S.newKit || []).map(n => `<div class="unl">🎁 Avatar kit: ${n}</div>`).join('')}${S.habits.slots > F.startSlots ? '<div class="unl">🔓 New habit slot</div>' : ''}</div>` : ''}
     <div class="row"><button onclick="F=null;go('more',{more:'share'})">Share ↗</button><button class="ghost" onclick="F=null;go('home')">Done</button></div>`;
 };
+window.setAv = (k, v) => { avatarState()[k] = v; save(); render(); };
+window.toggleKit = k => { const A = avatarState(); A.kit[k] = !A.kit[k]; if (k === 'helmet' && A.kit.helmet) A.kit.headband = false; if (k === 'headband' && A.kit.headband) A.kit.helmet = false; save(); render(); };
 window.toStep3 = () => { F.step = 3; render(); scrollTo(0, 0); };
 window.quickPick = q => { F.q = F.q === q ? null : q; if (F.q) F.sport = F.q; render(); };
 window.togglePick = id => { F.sel = F.sel.includes(id) ? F.sel.filter(x => x !== id) : [...F.sel, id]; render(); };
@@ -869,7 +996,15 @@ const MORE = {
     return `<h3>Intensity</h3><p class="muted">Drop down any time. Moving up earns the 📈 badge.</p>${modePicker(S.persona, 'pickPersona')}
       <h3>Tracking</h3>${depthPicker(S.depth, 'pickDepth')}
       <h3>Sports & goals</h3><div class="panel"><p class="muted">${S.sports.map(sportName).join(' · ')}<br>${activeGoals(S).length} active goals${S.goals.some(g => g.status === 'parked') ? `, ${S.goals.filter(g => g.status === 'parked').length} parked` : ''}</p><button class="ghost wide" onclick="go('goals')">Edit sports & goals</button></div>
-      <h3>Profile</h3><div class="panel"><label>Name on card</label><input value="${esc(S.name)}" onchange="S.name=this.value;save()"></div>
+      <h3>Profile</h3><div class="panel"><label>Name on card</label><input value="${esc(S.name)}" onchange="S.name=this.value;save()">
+      </div><h3>Avatar</h3><div class="panel avedit"><div class="avprev">${avatarSVG({ mood: 'idle', size: 220 })}</div>
+        <label>Skin tone</label><div class="sw">${SKINS.map(c => `<button style="background:${c}" class="${avatarState().skin === c ? 'on' : ''}" onclick="setAv('skin','${c}')" aria-label="skin ${c}"></button>`).join('')}</div>
+        <label>Hair</label><div class="chips">${Object.entries(HAIRS).map(([k, l]) => `<button class="chip btn ${avatarState().hair === k ? 'on' : ''}" onclick="setAv('hair','${k}')">${l}</button>`).join('')}</div>
+        <div class="sw">${HAIR_COLS.map(c => `<button style="background:${c}" class="${avatarState().hairCol === c ? 'on' : ''}" onclick="setAv('hairCol','${c}')" aria-label="hair colour ${c}"></button>`).join('')}</div>
+        <label>Beard</label><div class="chips">${Object.entries(BEARDS).map(([k, l]) => `<button class="chip btn ${avatarState().beard === k ? 'on' : ''}" onclick="setAv('beard','${k}')">${l}</button>`).join('')}</div>
+        <label>Prosthetic (drawn on the avatar and sample photos)</label><div class="seg sm">${[['left', 'Left below-knee'], ['right', 'Right below-knee'], ['none', 'None']].map(([k, l]) => `<button class="${(S.prosthetic || 'left') === k ? 'on' : ''}" onclick="S.prosthetic='${k}';save();render()">${l}</button>`).join('')}</div>
+        <label>Kit <small>(earned with badges and levels)</small></label><div class="kit">${Object.entries(KIT).map(([k, [n, ic, req, t]]) => { const un = t(S), on = un && avatarState().kit[k];
+          return `<button class="${on ? 'on' : ''} ${un ? '' : 'locked'}" ${un ? `onclick="toggleKit('${k}')"` : 'disabled'}><span>${un ? ic : '🔒'}</span><b>${n}</b><small>${un ? (on ? 'Equipped' : 'Tap to wear') : req}</small></button>`; }).join('')}</div></div>
       <h3>Body</h3>${rows}
       <div class="row"><button class="ghost" onclick="exportData()">Export data (JSON)</button>
       <button class="ghost danger" onclick="if(confirm('Wipe all data, including photos?')){localStorage.removeItem(STORE_KEY);localStorage.removeItem(V1_KEY);indexedDB.deleteDatabase('fitquest-photos');location.reload()}">Reset all</button></div>
@@ -1001,7 +1136,7 @@ function saveSession(id, sets, quiet, sport) {
   if (id === 'cyc_ftp' && cur.key > S.metrics.ftp.current) S.metrics.ftp.current = Math.round(cur.key);
   const firstToday = !S.sessions.some(x => x !== cur && x.date === today());
   addXP(firstToday ? XP.session : 10, 'logged', quiet || cur.pb);
-  if (cur.pb) { S.pbCount++; addXP(XP.pb, 'PB bonus', true); if (!quiet) pbMoment(fmtVal(L, cur.key), `${L.name} · +${Math.round(XP.pb * PERSONAS[S.persona].xpMult)} XP`); }
+  if (cur.pb) { celebrate(); S.pbCount++; addXP(XP.pb, 'PB bonus', true); if (!quiet) pbMoment(fmtVal(L, cur.key), `${L.name} · +${Math.round(XP.pb * PERSONAS[S.persona].xpMult)} XP`); }
   markActiveDay(); logPoint(); checkBadges(); save();
   return { cur, prev };
 }
@@ -1122,7 +1257,11 @@ async function seedDemo() {
     const gr = g.createLinearGradient(0, 0, 0, 800); gr.addColorStop(0, '#3a3f52'); gr.addColorStop(1, '#1c1f2b'); g.fillStyle = gr; g.fillRect(0, 0, 600, 800);
     const k = 1 - w * 0.025, bw = (pose === 'side' ? 110 : 170) * k; g.fillStyle = '#c99a7a';
     g.beginPath(); g.arc(300, 150, 55, 0, 7); g.fill(); roundRect(g, 300 - bw, 215, bw * 2, 300, 60); g.fill();
-    g.fillRect(300 - bw * 0.8, 500, bw * 0.7, 260); g.fillStyle = pose === 'back' ? '#c99a7a' : '#8892a6'; g.fillRect(300 + bw * 0.1, 500, bw * 0.7 * (pose === 'side' ? 0.6 : 1), 260);
+    // legs: the prosthetic side follows S.prosthetic (default LEFT below-knee). Front view: subject's left = viewer's right; back view: viewer's left.
+    const pl = S.prosthetic || 'left', pxLeft = 300 - bw * 0.8, pxRight = 300 + bw * 0.1, lw = bw * 0.7;
+    const protX = pl === 'none' ? null : pose === 'front' ? (pl === 'left' ? pxRight : pxLeft) : pose === 'back' ? (pl === 'left' ? pxLeft : pxRight) : pxRight;
+    for (const x of pose === 'side' ? [pxRight] : [pxLeft, pxRight]) { g.fillStyle = '#c99a7a'; g.fillRect(x, 500, lw, x === protX ? 130 : 260);
+      if (x === protX) { g.fillStyle = '#8892a6'; g.fillRect(x + lw * 0.3, 630, lw * 0.4, 110); g.fillRect(x, 740, lw * 1.1, 20); } }
     g.fillStyle = 'rgba(255,255,255,.5)'; g.font = '28px sans-serif'; g.fillText(`DEMO · week ${w + 1}`, 20, 780);
     const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
     await idb.put({ id: uid(), t: w * 3, date: addDays(start, w * 7 + 2), pose, blob, weight: +(102.8 - w * 0.65).toFixed(1), level: 1 + Math.floor(w * 0.8), ovr: 50 + w });

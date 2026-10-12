@@ -6,6 +6,12 @@ localStorage (`fitquest-v2`) for everything except progress photos, which live i
 ## Day-to-day use
 Open the app after a workout and tap **Log workout** on Home. There are four quick steps: pick the goal(s) you attempted or a general training session, adjust the prefilled numbers with −/+, tick today's habits, then collect your reward (XP, PBs, streak, unlocks) and share it if you like. Everything else lives in the secondary tabs.
 
+## Profile
+The prosthetic side defaults to a left below-knee leg (Settings › Profile: Left / Right / None). The demo photo silhouettes and any future avatar use it.
+
+## Avatar
+Your bobblehead avatar on the Card gets more athletic as your rating climbs (5 stages). It earns kit through badges and levels (headband, shades, sweatbands, tri suit, helmet, bike, medal, Goggins hoodie, and a carbon running blade at level 12). It celebrates PBs and level-ups and slumps when a streak breaks. Customise skin, hair, beard and prosthetic side in Settings › Avatar. It's pure SVG and CSS, so it works offline, and it appears on share cards too.
+
 ## Goals and baselines
 Pick your sports and specific benchmark goals (5 km, FTP, 400 m swim, bench 5RM, marathon...) during onboarding or in Settings › Sports & goals. Each goal has a target (times as mm:ss). **Test** goals need a first attempt within 14 days. **Build-up** goals (long distances) count any session in that sport as the baseline; their chart tracks your longest distance until you finish the full distance. Goals with no baseline after 14 days are **parked**: kept, but dimmed and left out of the rating, and one tap re-activates them. Home shows the Baseline week countdown.
 
@@ -22,7 +28,7 @@ Pick your sports and specific benchmark goals (5 km, FTP, 400 m swim, bench 5RM,
 ## Files
 - `index.html` – shell, top XP bar, bottom nav.
 - `styles.css` – mobile-first dark game theme.
-- `app.js` – numbered sections (10b = Home + post-workout flow): 1 config (personas, Iron tiers, XP, exercise library, habits, badges; **start here to tweak the game**), 2 state + v1 migration, 3 scoring, 4 game rules, 5 exercises, 6 habits, 7 photos, 8 SVG charts, 9 share cards, 10 views, 11 actions, 12 boot + demo.
+- `app.js` – numbered sections (10b = Home + post-workout flow): 1 config (personas, Iron tiers, XP, exercise library, habits, badges; **start here to tweak the game**), 2 state + v1 migration, 3 scoring, 4 game rules, 5 exercises, 6 habits, 7 photos, 8 SVG charts, 9 share cards, 9b avatar, 10 views, 11 actions, 12 boot + demo.
 - Data: localStorage key `fitquest-v2` (format v3: `sports`, `goals[]` with `status`/`since`/`baselineDate`, `sessions[]`); older v1/v2 saves migrate automatically.
 - `screenshots/` – mobile (390×844 @2x) screenshots of the key screens and sample share PNGs.
 

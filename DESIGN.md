@@ -4,6 +4,17 @@
 v2 core is **BUILT** (static app, localStorage + IndexedDB, no backend). Marked inline as ✅ built, 🟡 partly, ⏳ later.
 v1 saves (`fitquest-v1`) migrate automatically to `fitquest-v2`; the v1 key is kept as a backup.
 
+## Avatar: bobblehead caricature ✅ built (12 Oct 2026)
+- An inline SVG cartoon (big head, small body) animated with CSS only, so it works offline. It sits on the athlete Card, the reward screen, the Settings preview and the share cards (drawn into the PNG).
+- **5 body stages from the overall rating**: 1 Couch Starter (<55), 2 Getting Going (55+), 3 Solid (62+), 4 Athlete (70+), 5 Elite Machine (80+). The build changes from soft and round (wide torso, belly, chubby cheeks, small shoulders) to lean and muscular (narrow waist, abs, big shoulders and arms). Stage changes ease with a springy 1.4 s transition (the last shown stage is stored as `avShown`).
+- **Animations**: idle bob, breathing and blinking. A celebration (jump, arms up, confetti) plays for 15 min after a PB or level-up, and always on the reward screen. A sad slump (head down, desaturated, tear) shows on the day the streak breaks until you log a workout. Respects prefers-reduced-motion.
+- **Kit unlocks** (auto-equipped once, toggle in Settings): headband (level 2), race shades (first PB), sweatbands (7-day streak), tri suit (level 5), cycling helmet (FTP 260 W or level 7), tri bike (level 8), finisher medal (Iron finish, a build-up distance or all baselines), Goggins hoodie (Goggins mode + 7-day streak), **carbon running blade (level 12)**, which replaces the pylon and foot on the prosthetic side.
+- **Customisation** (Settings › Avatar): 6 skin tones, 5 hair styles × 6 colours, 5 beard options, and the prosthetic side (default **LEFT below-knee**, drawn on the avatar's left leg, i.e. the viewer's right).
+- See `screenshots/avatar-stages.png`, `avatar-card.png` and `avatar-kit-moods.png`.
+
+## Profile: prosthetic side ✅ built
+- Matt has a **LEFT below-knee** prosthetic. `S.prosthetic` defaults to `'left'` (Settings › Profile: Left / Right / None). The sample photo silhouettes draw it on the subject's left (viewer's right from the front, viewer's left from the back). Any future avatar should read this field.
+
 ## Goals-based tracking (v3, 12 Oct 2026) ✅ built
 Matt found the v2 metrics too broad, so tracking is now built around **specific benchmark goals** he picks up front.
 - Onboarding: intensity → tracking depth → **sports** (Running, Cycling, Swimming, Rowing, Strength, Bodyweight) → **goals** per sport, each with an optional target (defaults scaled by intensity, times entered as mm:ss) → weight/FTP → habits. Editable later in Settings › Sports & goals or Train › Edit goals.
