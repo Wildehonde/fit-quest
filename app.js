@@ -51,9 +51,10 @@ const KINDS = {
   rm:      { fields: [['reps', 'reps', 1], ['kg', 'kg', 2.5]], unit: 'kg', keyLabel: 'Est.' },
   reps:    { fields: [['reps', 'reps', 1]], unit: 'reps', keyLabel: 'Best set' },
   hold:    { fields: [['sec', 'sec', 5]], unit: 's', keyLabel: 'Longest hold' },
+  race:    { fields: [], lower: true, unit: '', keyLabel: 'Race time' },
   session: { fields: [['min', 'min', 5], ['km', 'km', 0.5, true]], unit: 'min', keyLabel: 'Duration' },
 };
-const SPORTS = { run: ['🏃', 'Running'], cycle: ['🚴', 'Cycling'], swim: ['🏊', 'Swimming'], row: ['🚣', 'Rowing'], strength: ['🏋️', 'Strength'], bodyweight: ['🤸', 'Bodyweight'] };
+const SPORTS = { run: ['🏃', 'Running'], cycle: ['🚴', 'Cycling'], swim: ['🏊', 'Swimming'], row: ['🚣', 'Rowing'], hyrox: ['🟨', 'Hyrox'], strength: ['🏋️', 'Strength'], bodyweight: ['🤸', 'Bodyweight'] };
 const sportName = k => SPORTS[k] ? `${SPORTS[k][0]} ${SPORTS[k][1]}` : '💪 Training';
 const DEFAULT_SPORTS = ['run', 'cycle', 'swim', 'strength', 'bodyweight'];
 
@@ -88,6 +89,35 @@ const GOALS = [
 for (const [k, n, b] of [['squat', 'Back squat', 90], ['deadlift', 'Deadlift', 130], ['trapdl', 'Trap-bar deadlift', 140], ['bench', 'Bench press', 80],
   ['ohp', 'Overhead press', 50], ['row', 'Barbell row', 70], ['legpress', 'Leg press', 160], ['rdl', 'Romanian deadlift', 100], ['hip', 'Hip thrust', 120]])
   for (const r of [1, 5]) { const f = r === 1 ? 1 : 0.86; GOALS.push(G('strength', `str_${k}_${r}`, `${n} ${r}RM`, 'rm', Math.round(b * f / 2.5) * 2.5, Math.round(b * 1.3 * f / 2.5) * 2.5, { n: r })); }
+// ---- HYROX ----
+// 8 x (1 km run + station). Station goals are timed; weights depend on the division (S.hyrox).
+const HX_STATIONS = [['ski', '1 km SkiErg', Tm(4, 45), Tm(4, 0)], ['push', '50 m sled push', Tm(4, 0), Tm(2, 45)], ['pull', '50 m sled pull', Tm(5, 0), Tm(3, 30)], ['bbj', '80 m burpee broad jumps', Tm(5, 30), Tm(4, 0)],
+  ['row', '1 km row', Tm(4, 50), Tm(4, 10)], ['farmers', '200 m farmers carry', Tm(2, 10), Tm(1, 40)], ['lunges', '100 m sandbag lunges', Tm(5, 0), Tm(3, 45)], ['wb', '100 wall balls', Tm(7, 0), Tm(5, 0)]];
+HX_STATIONS.forEach(([k, n, b, t], i) => GOALS.push(G('hyrox', 'hx_' + k, n, 'time', b, t, { hx: true, station: k, order: i + 1 })));
+GOALS.push(G('hyrox', 'hx_run', '1 km compromised run (avg split)', 'time', Tm(5, 45), Tm(4, 45), { hx: true }),
+  G('hyrox', 'hx_rox', 'Roxzone total (transitions)', 'time', Tm(8), Tm(5), { hx: true }),
+  G('hyrox', 'hx_half', 'Half-sim time', 'time', Tm(50), Tm(42), { hx: true, note: '4 × (1 km run + station), stations 1–4 or 5–8.' }),
+  G('hyrox', 'hx_full', 'Hyrox full race', 'build', Tm(105), Tm(85), { hx: true, dist: 16, note: 'Build-up goal: half-sims and station practice count as the baseline. The chart counts race "units" (8 runs + 8 stations = 16). Your PB is set by a full race.' }));
+const HX_DIV = { open: 'Open', pro: 'Pro', adaptive: 'Adaptive' };
+const HX_CAT = { men: 'Men', women: 'Women', dmen: 'Doubles Men', dwomen: 'Doubles Women', dmixed: 'Doubles Mixed', relay: 'Relay' };
+const HX_ADAPT = { llminor: 'Lower Limb Minor', llmajor: 'Lower Limb Major' };
+// Official weights (25/26 rulebooks). [push, pull, farmers, lunges, wall balls]. Sleds include the sled.
+const HX_W = {
+  'open-m': ['152 kg', '103 kg', '2 × 24 kg', '20 kg', '6 kg · 3.0 m'], 'open-w': ['102 kg', '78 kg', '2 × 16 kg', '10 kg', '4 kg · 2.7 m'],
+  'pro-m': ['202 kg', '153 kg', '2 × 32 kg', '30 kg', '9 kg · 3.0 m'], 'pro-w': ['152 kg', '103 kg', '2 × 24 kg', '20 kg', '6 kg · 2.7 m'],
+  'adaptive-llminor-m': ['152 kg · 4 × 12.5 m', '103 kg · 2 × 12.5 m', 'see adaptive rulebook', 'see adaptive rulebook', '6 kg · 3.0 m'],
+  'adaptive-llminor-w': ['102 kg · 4 × 12.5 m', '78 kg · 2 × 12.5 m', 'see adaptive rulebook', 'see adaptive rulebook', '4 kg · 2.7 m'],
+  'adaptive-llmajor-m': ['152 kg · 2 × 12.5 m', '78 kg · 2 × 12.5 m', 'see adaptive rulebook', 'see adaptive rulebook', '4 kg · 3.0 m'],
+  'adaptive-llmajor-w': ['102 kg · 2 × 12.5 m', '53 kg · 2 × 12.5 m', 'see adaptive rulebook', 'see adaptive rulebook', '2 kg · 2.7 m'],
+};
+const hxCfg = () => (S.hyrox = { div: 'open', cat: 'men', adapt: 'llminor', ...(S.hyrox || {}) });
+function hxWeight(station) {
+  const h = hxCfg(), idx = { push: 0, pull: 1, farmers: 2, lunges: 3, wb: 4 }[station]; if (idx == null) return '';
+  if (h.cat === 'dmixed') return h.div === 'pro' ? 'Pro Mixed: check event rulebook' : 'Mixed: check event rulebook';
+  const g = ['women', 'dwomen'].includes(h.cat) ? 'w' : 'm', key = h.div === 'adaptive' ? `adaptive-${h.adapt}-${g}` : `${h.div}-${g}`;
+  return (HX_W[key] || HX_W['open-' + g])[idx];
+}
+const hxDivLabel = () => { const h = hxCfg(); return h.div === 'adaptive' ? `Adaptive · ${HX_ADAPT[h.adapt]} · ${['women', 'dwomen'].includes(h.cat) ? 'Women' : 'Men'}` : `${HX_DIV[h.div]} · ${HX_CAT[h.cat]}`; };
 const DEFAULT_GOALS = ['run_5k', 'run_10k', 'run_21', 'cyc_ftp', 'cyc_5min', 'cyc_100', 'swim_400', 'swim_css', 'swim_1900', 'str_trapdl_1', 'str_bench_5', 'bw_pullup', 'bw_plank'];
 const BASELINE_DAYS = 14;
 
@@ -119,6 +149,11 @@ const BADGES = {
   level10:   ['🌟', 'Level 10', s => levelInfo(s.xp).level >= 10],
   upgrade:   ['📈', 'Moved Up a Mode', s => s.upgraded],
   baselines: ['🎯', 'Baselines Locked In', s => !s.everParked && s.goals.length >= 3 && s.goals.every(g => g.baselineDate)],
+  hx_first:  ['🟨', 'First Hyrox', s => s.sessions.some(x => x.exId === 'hx_race')],
+  hx_half:   ['🌓', 'Half-Sim Done', s => s.sessions.some(x => x.exId === 'hx_half')],
+  hx_sub90:  ['⏱️', 'Hyrox Sub-90', s => s.sessions.some(x => x.exId === 'hx_race' && x.key < 5400)],
+  hx_sub75:  ['🚀', 'Hyrox Sub-75', s => s.sessions.some(x => x.exId === 'hx_race' && x.key < 4500)],
+  hx_sweep:  ['🧹', 'Station Sweep (8 PBs in one race)', s => s.sessions.some(x => x.exId === 'hx_race' && x.stationPBs === 8)],
   finisher:  ['🏅', 'Distance Finisher', s => s.sessions.some(x => goalDef(x.exId).type === 'build')],
   firstpb:   ['🏆', 'First PB', s => s.pbCount >= 1],
   pb10:      ['🥊', '10 PBs', s => s.pbCount >= 10],
@@ -326,12 +361,13 @@ function setPersona(p) {
 
 /* ---------- 5) GOALS, SESSIONS, BASELINES ---------- */
 function goalDef(id) {
-  return GOALS.find(g => g.id === id) || (id === 'session' ? { id, name: 'Training session', kind: 'session', sport: 'other', type: 'session' }
+  return GOALS.find(g => g.id === id) || (id === 'hx_race' ? { id, name: 'Hyrox race', kind: 'race', sport: 'hyrox', type: 'race', hx: true } : id === 'session' ? { id, name: 'Training session', kind: 'session', sport: 'other', type: 'session' }
     : { id, name: id, kind: 'reps', sport: 'bodyweight', type: 'test', base: 0, target: 1 });
 }
 const lib = goalDef;
 function e1rm(reps, kg) { return reps <= 1 ? kg : kg * (1 + reps / 30); }
 function keyOf(L, sets) {
+  if (L.kind === 'race') return sets[0]?.total ?? null;
   const k = L.kind, v = sets.map(st => k === 'rm' ? e1rm(+st.reps, +st.kg) / (L.n === 5 ? 1 + 5 / 30 : 1) : k === 'reps' ? +st.reps : k === 'hold' ? +st.sec
     : k === 'watts' ? +st.watts * (L.factor || 1) : k === 'far' ? +st.km : k === 'session' ? +st.min : +st.time).filter(Number.isFinite);
   if (!v.length) return null;
@@ -347,9 +383,9 @@ const fmtNum = n => (Math.round(n * 10) / 10).toLocaleString('en-US');
 function fmtTime(sec) { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`; }
 // "25:30" -> 1530 s, "1:02:03" -> 3723 s, a bare number is minutes ("25" -> 1500 s)
 function parseTime(v) { v = String(v).trim(); if (!v) return NaN; if (!v.includes(':')) return Math.round(parseFloat(v) * 60); return v.split(':').reduce((a, p) => a * 60 + (parseFloat(p) || 0), 0); }
-const isTimeKind = L => L.kind === 'time' || L.kind === 'build';
+const isTimeKind = L => L.kind === 'time' || L.kind === 'build' || L.kind === 'race';
 const fmtVal = (L, v) => v == null ? '–' : isTimeKind(L) ? fmtTime(v) : `${fmtNum(v)} ${KINDS[L.kind].unit}`.trim();
-function sessionKm(x) { if (x.exId === 'session') return +(x.sets[0] || {}).km || 0; const L = goalDef(x.exId); return L.dist || (L.kind === 'far' ? x.key : 0); }
+function sessionKm(x) { if (x.exId === 'session') return +(x.sets[0] || {}).km || 0; if (x.sport === 'hyrox') return x.exId === 'hx_race' || x.exId === 'hx_full' ? 16 : x.exId === 'hx_half' ? 8 : 1; const L = goalDef(x.exId); return L.dist || (L.kind === 'far' ? x.key : 0); }
 const longestIn = sport => Math.max(0, ...S.sessions.filter(x => x.sport === sport).map(sessionKm));
 function compare(prev, cur, L) {
   if (L.kind === 'session') return [{ txt: `${cur.sets[0].min} min${cur.sets[0].km ? ` · ${cur.sets[0].km} km` : ''} logged`, cls: 'neu' }];
@@ -577,6 +613,7 @@ const KIT = {
   helmet:   ['Cycling helmet', '⛑️', 'FTP 260W or level 7', s => s.badges.includes('ftp260') || levelInfo(s.xp).level >= 7],
   bike:     ['Tri bike', '🚲', 'Reach level 8', s => levelInfo(s.xp).level >= 8],
   medal:    ['Finisher medal', '🏅', 'Finish Iron or a build-up distance, or lock in all baselines', s => ['ironDone', 'finisher', 'baselines'].some(b => s.badges.includes(b))],
+  hxvest:   ['Hyrox race vest', '🟨', 'Log your first Hyrox race', s => s.badges.includes('hx_first')],
   hoodie:   ['Goggins hoodie', '💀', 'Goggins mode + 7-day streak', s => s.persona === 'goggins' && s.badges.includes('streak7')],
   blade:    ['Carbon running blade', '🦿', 'Reach level 12', s => levelInfo(s.xp).level >= 12],
 };
@@ -633,6 +670,7 @@ function avatarSVG(o = {}) {
   const band = kit.headband && !kit.helmet ? `<path d="M50,58 Q100,40 150,58 L150,68 Q100,50 50,68 Z" fill="#ff3b3b"/><path d="M148,60 l14,6 l-6,10 z" fill="#d42c2c"/>` : '';
   const hood = kit.hoodie ? `<path d="M40,96 C36,40 70,22 100,22 C130,22 164,40 160,96 C158,130 140,140 100,140 C60,140 42,130 40,96 Z" fill="#3c404b"/>` : '';
   const strings = kit.hoodie ? `<path d="M92,132 v26 M108,132 v26" stroke="#e8e8e8" stroke-width="2"/><text x="100" y="178" font-size="9" font-weight="900" text-anchor="middle" fill="#cfd3dc" font-family="Arial Narrow,Arial,sans-serif" letter-spacing="1">STAY HARD</text>` : '';
+  const vest = kit.hxvest ? `<path d="M74,132 L88,128 Q100,140 112,128 L126,132 L130,196 L70,196 Z" fill="#ffe000" stroke="#14161c" stroke-width="3"/><path d="M70,176 L130,176 L130,186 L70,186 Z" fill="#14161c"/><text x="100" y="166" font-size="13" font-weight="900" text-anchor="middle" fill="#14161c" font-family="Arial Narrow,Arial,sans-serif">HYROX</text>` : '';
   const medal = kit.medal ? `<path d="M90,128 L100,158 L110,128" stroke="#2f6bff" stroke-width="5" fill="none"/><circle cx="100" cy="162" r="9" fill="#ffc52e" stroke="#d99a00" stroke-width="2"/><text x="100" y="166" font-size="10" text-anchor="middle" font-weight="900" fill="#a86f00">1</text>` : '';
   const tri = kit.trisuit && !kit.hoodie ? `<path d="M82,130 L82,196 M118,130 L118,196" stroke="#ff5a1f" stroke-width="4"/>` : '';
   const bike = kit.bike ? `<g class="bike" opacity=".95"><circle cx="30" cy="244" r="20" fill="none" stroke="#2a2f3a" stroke-width="5"/><circle cx="170" cy="244" r="20" fill="none" stroke="#2a2f3a" stroke-width="5"/>
@@ -648,7 +686,7 @@ function avatarSVG(o = {}) {
         <rect x="76" y="126" width="48" height="72" rx="18" fill="${shirt}"/>
         <ellipse cx="100" cy="176" rx="27" ry="19" fill="${shirtD}" ${T('belly', bellyT(fr), bellyT(st), '100px 170px')}/>
         <g opacity="${st.abs}" class="abs"><path d="M88,142 Q94,148 100,144 Q106,148 112,142" stroke="${shirtD}" stroke-width="2.5" fill="none"/><path d="M100,150 v32 M92,160 h16 M93,171 h14" stroke="${shirtD}" stroke-width="2" stroke-linecap="round"/></g>
-        ${tri}${strings}${medal}</g>
+        ${tri}${strings}${vest}${medal}</g>
       <circle cx="76" cy="138" r="12" fill="${kit.trisuit && !kit.hoodie ? skin : shirt}" ${T('shr', shT(fr), shT(st), '76px 140px')}/><circle cx="124" cy="138" r="12" fill="${kit.trisuit && !kit.hoodie ? skin : shirt}" ${T('shl', shT(fr), shT(st), '124px 140px')}/>
     </g>
     <g class="head">${hood}<rect x="91" y="118" width="18" height="14" fill="${skinD}"/>
@@ -729,7 +767,7 @@ function sportPicker() {
 function goalPicker() {
   const mine = id => S.goals.find(g => g.id === id);
   return S.sports.map(sp => { const list = GOALS.filter(g => g.sport === sp);
-    return `<h3>${sportName(sp)}</h3><div class="chips">${list.map(L => `<button class="chip btn ${mine(L.id) ? 'on' : ''}" onclick="toggleGoal('${L.id}')">${mine(L.id) ? '✓ ' : ''}${L.name}${L.type === 'build' ? ' <em>build-up</em>' : ''}</button>`).join('')}</div>
+    return `<h3>${sportName(sp)}</h3>${sp === 'hyrox' ? hxDivisionPicker() : ''}<div class="chips ${sp === 'hyrox' ? 'hxchips' : ''}">${list.map(L => `<button class="chip btn ${mine(L.id) ? 'on' : ''}" onclick="toggleGoal('${L.id}')">${mine(L.id) ? '✓ ' : ''}${L.name}${L.type === 'build' ? ' <em>build-up</em>' : ''}</button>`).join('')}</div>
       ${S.goals.filter(g => goalDef(g.id).sport === sp).map(g => { const L = goalDef(g.id);
         return `<div class="gtgt"><span>${L.name}</span><label>Target <input ${isTimeKind(L) ? 'type="text" inputmode="text" placeholder="mm:ss"' : 'type="number" step="any"'} value="${isTimeKind(L) ? fmtTime(g.target) : g.target}" onchange="setGoalTarget('${g.id}',this.value)"> ${isTimeKind(L) ? '' : KINDS[L.kind].unit}</label></div>`; }).join('')}`; }).join('') || '<p class="muted">Pick at least one sport first.</p>';
 }
@@ -789,12 +827,12 @@ const VIEWS = {
     if (R.ex) return goalView(R.ex);
     const act = activeGoals(S), parked = S.goals.filter(g => g.status === 'parked');
     const row = g => { const L = goalDef(g.id), b = bestKey(g.id), last = sessionsFor(g.id).at(-1), p = goalProgress(g), pend = g.status === 'active' && !g.baselineDate;
-      return `<button class="exrow ${g.status}" onclick="go('train',{ex:'${g.id}'})"><div class="exm"><b>${L.name}${L.type === 'build' ? ' <em class="tag">build-up</em>' : ''}</b>
+      return `<button class="exrow ${g.status} ${L.hx ? 'hx' : ''}" onclick="go('train',{ex:'${g.id}'})"><div class="exm"><b>${L.name}${L.type === 'build' ? ' <em class="tag">build-up</em>' : ''}</b>${L.station && hxWeight(L.station) ? `<small class="hxw">${hxWeight(L.station)}</small>` : ''}
         <small>${pend ? `🎯 ${daysLeft(g)}d left for a baseline` : g.status === 'parked' ? 'Parked · tap to re-activate' : `${last ? `Last ${fmtDate(last.date)} · ` : ''}${L.type === 'build' && b == null ? `Longest ${fmtNum(longestIn(L.sport))} of ${L.dist} km` : `PB ${fmtVal(L, b)} → ${fmtVal(L, g.target)}`}`}</small>
         <div class="bar"><i style="width:${p * 100}%"></i></div></div>${sparkline(g.id)}<span class="pct">${Math.round(p * 100)}%</span></button>`; };
     const sports = [...new Set(act.map(g => goalDef(g.id).sport))];
     return `<div class="ph"><h2>Goals</h2><button class="sm" onclick="go('goals')">+ Edit goals</button></div>
-      ${sports.map(sp => `<h3>${sportName(sp)}</h3>${act.filter(g => goalDef(g.id).sport === sp).map(row).join('')}`).join('') || '<p class="muted">No active goals. Add some.</p>'}
+      ${S.sports.includes('hyrox') ? hxRacesPanel() : ''}${sports.map(sp => `<h3>${sportName(sp)}</h3>${act.filter(g => goalDef(g.id).sport === sp).map(row).join('')}`).join('') || '<p class="muted">No active goals. Add some.</p>'}
       ${parked.length ? `<h3>⏸️ Parked <small>no baseline in ${BASELINE_DAYS} days · not in your rating</small></h3>${parked.map(g => `<div class="parkrow">${row(g)}<button class="sm ghost" onclick="reactivateGoal('${g.id}')">Re-activate</button></div>`).join('')}` : ''}`;
   },
   goals() {
@@ -885,7 +923,7 @@ window.startLog = pre => {
 const stepDots = () => `<div class="steps">${[1, 2, 3].map(i => `<i class="${i <= F.step ? 'on' : ''}"></i>`).join('')}</div>`;
 const pickTile = id => { if (id === 'session') return `<button class="pick gen ${F.sel.includes(id) ? 'on' : ''}" onclick="togglePick('session')"><b>⏱️ Training session</b><small>Any workout. Just duration${F.q ? ` · ${SPORTS[F.q][1]}` : ''}. No PB.</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`;
   const L = goalDef(id), g = S.goals.find(x => x.id === id), last = sessionsFor(id).at(-1), pend = g && g.status === 'active' && !g.baselineDate;
-  return `<button class="pick ${F.sel.includes(id) ? 'on' : ''} ${pend ? 'need' : ''}" onclick="togglePick('${id}')"><b>${L.name}</b><small>${pend ? `🎯 baseline · ${daysLeft(g)}d left` : last ? `${fmtDate(last.date)} · ${fmtVal(L, last.key)}` : sportName(L.sport)}</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`; };
+  return `<button class="pick ${L.hx ? 'hx' : ''} ${F.sel.includes(id) ? 'on' : ''} ${pend ? 'need' : ''}" onclick="togglePick('${id}')"><b>${L.name}</b><small>${pend ? `🎯 baseline · ${daysLeft(g)}d left` : last ? `${fmtDate(last.date)} · ${fmtVal(L, last.key)}` : sportName(L.sport)}</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`; };
 VIEWS.log = () => {
   if (!F) { R.tab = 'home'; return VIEWS.home(); }
   if (F.step === 1) {
@@ -894,7 +932,7 @@ VIEWS.log = () => {
     const pool = F.q ? act.filter(id => goalDef(id).sport === F.q) : [];
     return `${stepDots()}<div class="ph"><h2>What did you do?</h2><button class="x" onclick="F=null;go('home')">✕</button></div>
       <div class="quick">${S.sports.map(k => `<button class="${F.q === k ? 'on' : ''}" onclick="quickPick('${k}')"><span>${SPORTS[k][0]}</span>${SPORTS[k][1]}</button>`).join('')}</div>
-      <div class="picks one">${pickTile('session')}</div>
+      <div class="picks one">${S.sports.includes('hyrox') ? `<button class="pick hx race ${F.sel.includes('hx_race') ? 'on' : ''}" onclick="togglePick('hx_race')"><b>🟨 Hyrox race</b><small>All 8 runs + 8 stations + roxzone · ${hxDivLabel()}</small><i>${F.sel.includes('hx_race') ? '✓' : '+'}</i></button>` : ''}${pickTile('session')}</div>
       ${F.q ? `<h3>${sportName(F.q)} goals</h3><div class="picks">${pool.map(pickTile).join('') || '<span class="muted">No goals for this sport yet. Log a session, or add goals in Train.</span>'}</div>` : ''}
       ${need.length && !F.q ? `<h3>🎯 Needs a baseline</h3><div class="picks">${need.map(pickTile).join('')}</div>` : ''}
       ${rec.length && !F.q ? `<h3>Recent</h3><div class="picks">${rec.map(pickTile).join('')}</div>` : ''}
@@ -904,7 +942,7 @@ VIEWS.log = () => {
   }
   if (F.step === 2) {
     return `${stepDots()}<div class="ph"><h2>Your results</h2><button class="x" onclick="F.step=1;render()">‹ Back</button></div><p class="muted">Prefilled from last time. Tap − / + to adjust. Times are mm:ss.</p>
-      ${F.sel.map(id => { const L = goalDef(id), last = sessionsFor(id).at(-1), sets = F.sets[id] || (F.sets[id] = seedSets(id)), multi = L.kind === 'rm';
+      ${F.sel.includes('hx_race') ? raceForm() : ''}${F.sel.filter(id => id !== 'hx_race').map(id => { const L = goalDef(id), last = sessionsFor(id).at(-1), sets = F.sets[id] || (F.sets[id] = seedSets(id)), multi = L.kind === 'rm';
         const head = id === 'session' ? `<b class="en">⏱️ Training session</b></div><div class="chips">${S.sports.map(k => `<button class="chip btn ${F.sport === k ? 'on' : ''}" onclick="F.sport='${k}';render()">${SPORTS[k][0]} ${SPORTS[k][1]}</button>`).join('')}</div><div>`
           : `<b class="en">${L.name}</b><small class="muted">${last ? 'Last ' + fmtVal(L, last.key) : 'Baseline attempt'}${bestKey(id) != null ? ` · PB ${fmtVal(L, bestKey(id))}` : ''}</small>`;
         return `<div class="panel" id="fx-${id}"><div class="ph">${head}</div>
@@ -927,7 +965,7 @@ VIEWS.log = () => {
       ${li.level > F.startLevel ? `<div class="lvup">LEVEL UP · LV ${li.level}</div>` : `<div class="muted">Level ${li.level} · ${li.toNext} XP to go</div>`}
       <div class="xpbar"><i style="width:${li.pct}%"></i></div></div>
     <div class="tiles"><div class="tile hot"><b>${S.streak}</b><small>day streak 🔥</small></div><div class="tile"><b>${F.res.filter(x => x.cur.pb).length}</b><small>PBs today</small></div><div class="tile"><b>${overall(S)}</b><small>rating</small></div></div>
-    ${F.res.map(({ cur, prev }) => { const L = goalDef(cur.exId); return `<div class="panel ${cur.pb ? 'pbrow' : ''}"><div class="ph"><b>${cur.pb ? '🏆 ' : ''}${cur.exId === 'session' ? sportName(cur.sport) + ' session' : L.name}</b>${cur.pb ? '<span class="pbtag">PB!</span>' : cur.exId !== 'session' ? `<b>${fmtVal(L, cur.key)}</b>` : ''}</div><div class="cmp">${compare(prev, cur, L).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div></div>`; }).join('')}
+    ${F.res.map(({ cur, prev }) => { const L = goalDef(cur.exId); if (cur.exId === 'hx_race') return racePanel(cur, prev); return `<div class="panel ${cur.pb ? 'pbrow' : ''}"><div class="ph"><b>${cur.pb ? '🏆 ' : ''}${cur.exId === 'session' ? sportName(cur.sport) + ' session' : L.name}</b>${cur.pb ? '<span class="pbtag">PB!</span>' : cur.exId !== 'session' ? `<b>${fmtVal(L, cur.key)}</b>` : ''}</div><div class="cmp">${compare(prev, cur, L).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div></div>`; }).join('')}
     ${F.newBaselines?.length ? `<div class="panel"><h3>🎯 Baselines set</h3>${F.newBaselines.map(id => `<div class="unl">✓ ${goalDef(id).name}</div>`).join('')}</div>` : ''}
     ${newB.length || S.habits.slots > F.startSlots || S.newKit?.length ? `<div class="panel glow"><h3>🔓 Unlocked</h3>${newB.map(b => `<div class="unl">${BADGES[b][0]} ${BADGES[b][1]}</div>`).join('')}${(S.newKit || []).map(n => `<div class="unl">🎁 Avatar kit: ${n}</div>`).join('')}${S.habits.slots > F.startSlots ? '<div class="unl">🔓 New habit slot</div>' : ''}</div>` : ''}
     <div class="row"><button onclick="F=null;go('more',{more:'share'})">Share ↗</button><button class="ghost" onclick="F=null;go('home')">Done</button></div>`;
@@ -945,7 +983,8 @@ function cleanSets(L, sets) {
 }
 window.finishLog = () => {
   F.res = []; const before = new Set(S.goals.filter(g => g.baselineDate).map(g => g.id));
-  for (const id of F.sel) { const sets = cleanSets(goalDef(id), F.sets[id] || []); if (sets.length) F.res.push(saveSession(id, sets, true, id === 'session' ? F.sport : null)); }
+  if (F.sel.includes('hx_race')) F.res.push(saveRace());
+  for (const id of F.sel.filter(x => x !== 'hx_race')) { const sets = cleanSets(goalDef(id), F.sets[id] || []); if (sets.length) F.res.push(saveSession(id, sets, true, id === 'session' ? F.sport : null)); }
   if (!F.res.length) { F.step = 2; render(); return toast('Enter at least one result', true); }
   if (F.w != null && F.w !== F.startWeight && F.w > 0) {
     const lowest = F.w < Math.min(F.startWeight, ...S.log.map(e => e.weight)); S.metrics.weight.current = F.w; addXP(XP.weighin, 'weigh-in', true);
@@ -959,6 +998,70 @@ window.finishLog = () => {
   const p = F.res.find(x => x.cur.pb)?.cur; if (p) pbMoment(fmtVal(goalDef(p.exId), p.key), goalDef(p.exId).name);
 };
 
+/* ---------- 10c) HYROX RACE ---------- */
+const sum = a => a.reduce((x, y) => x + (+y || 0), 0);
+function raceSeed() {
+  const last = sessionsFor('hx_race').at(-1);
+  if (last) { const r = last.sets[0]; return { runs: [...r.runs], st: [...r.st], rox: r.rox }; }
+  const gb = id => (S.goals.find(g => g.id === id) || goalDef(id)).base;
+  return { runs: Array(8).fill(gb('hx_run')), st: HX_STATIONS.map(([k]) => gb('hx_' + k)), rox: gb('hx_rox') };
+}
+function raceForm() {
+  const r = F.race || (F.race = raceSeed()), total = sum(r.runs) + sum(r.st) + (+r.rox || 0), prev = sessionsFor('hx_race').at(-1);
+  const inp = (path, i, v) => `<input type="text" inputmode="text" placeholder="m:ss" value="${v ? fmtTime(v) : ''}" onchange="setRace('${path}',${i},this.value)">`;
+  return `<div class="panel hxpanel"><div class="ph"><b class="en">🟨 Hyrox race</b><small class="muted">${hxDivLabel()}</small></div>
+    <p class="muted">${prev ? `Prefilled from ${fmtDate(prev.date)}.` : 'Prefilled from your goal baselines.'} Enter each split as m:ss.</p>
+    <div class="racegrid"><span></span><small>Run</small><small>Station</small>
+    ${HX_STATIONS.map(([k, n], i) => `<b>${i + 1}</b>${inp('runs', i, r.runs[i])}<label>${inp('st', i, r.st[i])}<small>${n}${hxWeight(k) ? ' · ' + hxWeight(k) : ''}</small></label>`).join('')}
+    <b>⇄</b><label class="span2">${inp('rox', 0, r.rox)}<small>Roxzone total (all transitions)</small></label></div>
+    <div class="racetotal"><span>Total</span><b>${fmtTime(total)}</b>${prev ? `<em class="${total < prev.key ? 'up' : 'down'}">${total < prev.key ? '−' : '+'}${fmtTime(Math.abs(total - prev.key))} vs last</em>` : ''}</div></div>`;
+}
+window.setRace = (path, i, v) => { const t = parseTime(v); if (path === 'rox') F.race.rox = t; else F.race[path][i] = t; render(); };
+function saveRace() {
+  const r = F.race || raceSeed(), total = sum(r.runs) + sum(r.st) + (+r.rox || 0);
+  const res = saveSession('hx_race', [{ runs: r.runs.map(Number), st: r.st.map(Number), rox: +r.rox || 0, total }], true, 'hyrox');
+  const pbs = [];
+  const derive = (id, time) => {
+    if (!(time > 0)) return; const best = bestKey(id), x = mkSession(id, today(), [{ time }]); x.derived = 'race'; x.pb = best != null && time < best; S.sessions.push(x);
+    const g = S.goals.find(g => g.id === id); if (g && best == null) g.base = time;
+    if (x.pb) { pbs.push(id); S.pbCount++; addXP(25, 'station PB', true); }
+  };
+  HX_STATIONS.forEach(([k], i) => derive('hx_' + k, +r.st[i]));
+  derive('hx_run', Math.round(sum(r.runs) / 8)); derive('hx_rox', +r.rox); derive('hx_full', total);
+  res.cur.stationPBs = pbs.filter(id => goalDef(id).station).length; res.cur.pbList = pbs;
+  if (pbs.length) celebrate(); save();
+  return res;
+}
+// Split breakdown: stacked bars (this race vs previous) + per-segment table
+function raceChart(cur, prev) {
+  const segs = r => { const out = []; for (let i = 0; i < 8; i++) { out.push(['run', `Run ${i + 1}`, +r.runs[i] || 0]); out.push(['st', HX_STATIONS[i][1], +r.st[i] || 0, i]); } out.push(['rox', 'Roxzone', +r.rox || 0]); return out; };
+  const a = segs(cur.sets[0]), b = prev ? segs(prev.sets[0]) : null, max = Math.max(cur.key, prev?.key || 0), W = 340, L = 64;
+  const bar = (sg, y, label, tot) => { let x = L; return `<text x="0" y="${y + 17}" class="rl">${label}</text>${sg.map(([t, n, v, i], j) => { const w = v / max * (W - L - 4); const r = `<rect x="${x.toFixed(1)}" y="${y}" width="${Math.max(0, w - 0.6).toFixed(1)}" height="26" class="seg ${t} ${t === 'st' ? 'c' + (i % 2) : t === 'run' ? 'c' + (j / 2 % 2) : ''}"><title>${n}: ${fmtTime(v)}</title></rect>`; x += w; return r; }).join('')}<text x="${Math.min(x + 4, W - 2)}" y="${y + 40}" class="rt" text-anchor="end">${fmtTime(tot)}</text>`; };
+  const svg = `<svg viewBox="0 0 ${W} ${b ? 104 : 54}" class="racechart">${bar(a, 4, 'This race', cur.key)}${b ? bar(b, 56, 'Previous', prev.key) : ''}</svg>`;
+  const pbSet = new Set(cur.pbList || []);
+  const rows = HX_STATIONS.map(([k, n], i) => [n, +cur.sets[0].st[i], b ? +prev.sets[0].st[i] : null, pbSet.has('hx_' + k), hxWeight(k)])
+    .concat([['Avg run split', Math.round(sum(cur.sets[0].runs) / 8), b ? Math.round(sum(prev.sets[0].runs) / 8) : null, pbSet.has('hx_run')], ['Roxzone', +cur.sets[0].rox, b ? +prev.sets[0].rox : null, pbSet.has('hx_rox')]]);
+  return `${svg}<div class="legend"><i class="lgr"></i>Runs <i class="lgs"></i>Stations <i class="lgx"></i>Roxzone</div>
+    <table class="splits"><tr><th>Split</th><th>Time</th><th>vs prev</th></tr>${rows.map(([n, v, pv, pb, w]) => `<tr class="${pb ? 'pb' : ''}"><td>${n}${w ? `<small>${w}</small>` : ''}</td><td>${fmtTime(v)}${pb ? ' 🏆' : ''}</td><td class="${pv == null ? '' : v < pv ? 'up' : v > pv ? 'down' : ''}">${pv == null ? '–' : (v <= pv ? '−' : '+') + fmtTime(Math.abs(v - pv))}</td></tr>`).join('')}</table>`;
+}
+function racePanel(cur, prev) {
+  return `<div class="panel hxpanel ${cur.pb ? 'pbrow' : ''}"><div class="ph"><b>🟨 Hyrox race</b>${cur.pb ? '<span class="pbtag hxtag">RACE PB!</span>' : ''}</div>
+    <div class="racetotal"><span>Total</span><b>${fmtTime(cur.key)}</b>${cur.pbList?.length ? `<em class="up">${cur.stationPBs} station PB${cur.stationPBs === 1 ? '' : 's'}</em>` : ''}</div>${raceChart(cur, prev)}</div>`;
+}
+function hxDivisionPicker() {
+  const h = hxCfg(), seg = (key, opts) => `<div class="seg sm">${Object.entries(opts).map(([k, l]) => `<button class="${h[key] === k ? 'on' : ''}" onclick="hxCfg().${key}='${k}';save();render()">${l}</button>`).join('')}</div>`;
+  return `<div class="panel hxpanel"><b>🟨 Hyrox division</b>${seg('div', HX_DIV)}${h.div === 'adaptive' ? seg('adapt', HX_ADAPT) : ''}
+    <div class="chips">${Object.entries(HX_CAT).filter(([k]) => h.div !== 'adaptive' || ['men', 'women'].includes(k)).map(([k, l]) => `<button class="chip btn ${h.cat === k ? 'on' : ''}" onclick="hxCfg().cat='${k}';save();render()">${l}</button>`).join('')}</div>
+    ${h.div !== 'adaptive' && (S.prosthetic || 'left') !== 'none' ? '<p class="muted">With a below-knee prosthetic you may qualify for <b>Adaptive · Lower Limb Minor</b>. Check the HYROX adaptive classification.</p>' : ''}
+    <div class="wtable">${HX_STATIONS.filter(([k]) => hxWeight(k)).map(([k, n]) => `<div><span>${n}</span><b>${hxWeight(k)}</b></div>`).join('')}</div></div>`;
+}
+
+function hxRacesPanel() {
+  const rs = sessionsFor('hx_race'), last = rs.at(-1);
+  return `<div class="panel hxpanel"><div class="ph"><b>🟨 Hyrox races</b><button class="sm hxbtn" onclick="startLog('hx_race')">+ Log race</button></div>
+    ${last ? `<div class="racetotal"><span>Last · ${fmtDate(last.date)}</span><b>${fmtTime(last.key)}</b><em>PB ${fmtTime(bestKey('hx_race'))}</em></div>${raceChart(last, rs.at(-2))}
+    <div class="racelist">${rs.slice().reverse().map(r => `<div><span>${fmtDate(r.date)}</span><b>${fmtTime(r.key)}${r.pb ? ' 🏆' : ''}</b></div>`).join('')}</div>` : '<p class="muted">No races yet. Log one to unlock the Hyrox vest.</p>'}</div>`;
+}
 const MORE = {
   badges() {
     return `<p class="muted">${S.badges.length}/${Object.keys(BADGES).length} unlocked</p><div class="badges">
@@ -997,7 +1100,7 @@ const MORE = {
       <h3>Tracking</h3>${depthPicker(S.depth, 'pickDepth')}
       <h3>Sports & goals</h3><div class="panel"><p class="muted">${S.sports.map(sportName).join(' · ')}<br>${activeGoals(S).length} active goals${S.goals.some(g => g.status === 'parked') ? `, ${S.goals.filter(g => g.status === 'parked').length} parked` : ''}</p><button class="ghost wide" onclick="go('goals')">Edit sports & goals</button></div>
       <h3>Profile</h3><div class="panel"><label>Name on card</label><input value="${esc(S.name)}" onchange="S.name=this.value;save()">
-      </div><h3>Avatar</h3><div class="panel avedit"><div class="avprev">${avatarSVG({ mood: 'idle', size: 220 })}</div>
+      </div>${S.sports.includes('hyrox') ? '<h3>Hyrox</h3>' + hxDivisionPicker() : ''}<h3>Avatar</h3><div class="panel avedit"><div class="avprev">${avatarSVG({ mood: 'idle', size: 220 })}</div>
         <label>Skin tone</label><div class="sw">${SKINS.map(c => `<button style="background:${c}" class="${avatarState().skin === c ? 'on' : ''}" onclick="setAv('skin','${c}')" aria-label="skin ${c}"></button>`).join('')}</div>
         <label>Hair</label><div class="chips">${Object.entries(HAIRS).map(([k, l]) => `<button class="chip btn ${avatarState().hair === k ? 'on' : ''}" onclick="setAv('hair','${k}')">${l}</button>`).join('')}</div>
         <div class="sw">${HAIR_COLS.map(c => `<button style="background:${c}" class="${avatarState().hairCol === c ? 'on' : ''}" onclick="setAv('hairCol','${c}')" aria-label="hair colour ${c}"></button>`).join('')}</div>
@@ -1019,7 +1122,7 @@ function goalView(id) {
   const seed = last ? last.sets : seedSets(id);
   const ftp = L.id === 'cyc_ftp' && best ? '' : '';
   return `<button class="back" onclick="go('train')">‹ Goals</button>
-    <div class="ph"><h2>${L.name}</h2><span class="pill">${sportName(L.sport)}${build ? ' · build-up' : ' · test'}</span></div>${L.note ? `<p class="muted">${L.note}</p>` : ''}
+    <div class="ph ${L.hx ? 'hxhead' : ''}"><h2>${L.name}</h2><span class="pill">${sportName(L.sport)}${build ? ' · build-up' : ' · test'}</span></div>${L.note ? `<p class="muted">${L.note}</p>` : ''}${L.station && hxWeight(L.station) ? `<p class="hxw big">${hxDivLabel()}: <b>${hxWeight(L.station)}</b></p>` : ''}
     ${g.status === 'parked' ? `<div class="panel warn">⏸️ Parked on ${fmtDate(g.parkedOn || today())}: no baseline within ${BASELINE_DAYS} days. It's kept but left out of your rating.<button class="wide" onclick="reactivateGoal('${id}')">Re-activate (new ${BASELINE_DAYS}-day window)</button></div>`
       : !g.baselineDate ? `<div class="panel note">🎯 ${baselineText(g)}</div>` : ''}
     <div class="tiles"><div class="tile"><b>${best != null ? fmtVal(L, best) : '–'}</b><small>${K.keyLabel.includes('PB') ? K.keyLabel : K.keyLabel + ' PB'}</small></div><div class="tile"><b>${build && best == null ? fmtNum(longestIn(L.sport)) : fmtVal(L, g.target)}</b><small>${build && best == null ? `longest of ${L.dist} km` : 'Target'}</small></div><div class="tile"><b>${Math.round(p * 100)}%</b><small>to target</small></div></div>
@@ -1036,7 +1139,7 @@ function goalView(id) {
 }
 const exerciseView = goalView;
 const setRow = (L, s, i) => `<div class="setrow"><span>${i + 1}</span>${KINDS[L.kind].fields.map(([f, lbl, step, opt, typ]) => `<label><input ${typ === 'time' ? 'type="text" placeholder="mm:ss"' : `type="number" inputmode="decimal" step="${step}" placeholder="0"`} data-f="${f}" data-t="${typ || ''}" value="${s[f] == null ? '' : typ === 'time' ? fmtTime(s[f]) : s[f]}">${lbl}</label>`).join('')}<button class="x" onclick="this.parentNode.remove()">✕</button></div>`;
-const setText = (L, s) => { const k = L.kind; return k === 'rm' ? `${s.reps}×${s.kg}kg` : k === 'reps' ? `${s.reps} reps` : k === 'hold' ? `${s.sec}s` : k === 'watts' ? `${s.watts}W` : k === 'far' ? `${s.km}km` : k === 'session' ? `${s.min} min${s.km ? ` · ${s.km}km` : ''}` : fmtTime(s.time); };
+const setText = (L, s) => { const k = L.kind; if (k === 'race') return `race ${fmtTime(s.total)}`; return k === 'rm' ? `${s.reps}×${s.kg}kg` : k === 'reps' ? `${s.reps} reps` : k === 'hold' ? `${s.sec}s` : k === 'watts' ? `${s.watts}W` : k === 'far' ? `${s.km}km` : k === 'session' ? `${s.min} min${s.km ? ` · ${s.km}km` : ''}` : fmtTime(s.time); };
 
 const AFTER = {
   more() { if (R.more === 'share') renderSharePreview(); },
@@ -1205,7 +1308,7 @@ document.querySelectorAll('#nav button').forEach(b => b.onclick = () => go(b.dat
 
 // ?demo seeds 8 weeks of sample data (replaces local data, generates sample silhouette photos)
 async function seedDemo() {
-  S = freshState(); S.persona = 'athlete'; S.onboarded = true; S.habits.slots = 3; S.sports = ['run', 'cycle', 'swim', 'strength', 'bodyweight'];
+  S = freshState(); S.persona = 'athlete'; S.onboarded = true; S.habits.slots = 3; S.sports = ['run', 'cycle', 'swim', 'hyrox', 'strength', 'bodyweight'];
   const start = addDays(today(), -55); S.habits.start = start;
   const rnd = (i, k) => (Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % 1;
   for (let i = 0; i <= 55; i++) {
@@ -1218,7 +1321,7 @@ async function seedDemo() {
     S.log.push({ date: d, ovr: 0, ftp: S.metrics.ftp.current, weight: S.metrics.weight.current });
     if (i % 7 === 6) { todayOverride = addDays(d, 1); evaluateHabitWeeks(); todayOverride = null; }
   }
-  S.goals = ['run_5k', 'run_21', 'cyc_ftp', 'cyc_5min', 'cyc_100', 'swim_400', 'swim_1900', 'str_trapdl_1', 'str_bench_5', 'bw_pullup', 'bw_plank'].map(id => ({ ...newGoal(id, 'athlete'), since: start }));
+  S.goals = ['run_5k', 'run_21', 'cyc_ftp', 'cyc_5min', 'cyc_100', 'swim_400', 'swim_1900', 'str_trapdl_1', 'str_bench_5', 'bw_pullup', 'bw_plank', 'hx_ski', 'hx_push', 'hx_pull', 'hx_bbj', 'hx_row', 'hx_farmers', 'hx_lunges', 'hx_wb', 'hx_run', 'hx_rox', 'hx_full'].map(id => ({ ...newGoal(id, 'athlete'), since: start }));
   // [goal, start value, change per week (negative = faster)]
   const plan = { run_5k: [Tm(29, 40), -14], cyc_ftp: [253, 2.6], cyc_5min: [300, 4], swim_400: [Tm(9, 20), -6], str_trapdl_1: [130, 2], str_bench_5: [65, 0.8], bw_pullup: [4, 0.4], bw_plank: [60, 9] };
   for (const [id, [b, step]] of Object.entries(plan)) {
@@ -1237,7 +1340,16 @@ async function seedDemo() {
     S.sessions.push({ id: uid(), t: 2, exId: 'session', sport: 'cycle', date: addDays(start, w * 7 + 6), sets: [{ min: 120 + w * 12, km: 45 + w * 6 }], key: null, vol: null });
     S.sessions.push({ id: uid(), t: 3, exId: 'session', sport: 'swim', date: addDays(start, w * 7 + 3), sets: [{ min: 30 + w * 3, km: +(1.2 + w * 0.12).toFixed(2) }], key: null, vol: null });
   }
-  markPBs(S.sessions); S.pbCount = S.sessions.filter(x => x.pb).length;
+  // two Hyrox races (Open Men), the second faster on most splits
+  [[18, 1.0], [46, 0.9]].forEach(([day, f], ri) => {
+    const d = addDays(start, day), runs = [6.3, 6.0, 6.1, 6.2, 6.1, 6.4, 6.6, 6.8].map((m, i) => Math.round(m * 60 * (ri ? 0.93 : 1) + (rnd(i, ri) * 8))),
+      st = HX_STATIONS.map(([k, n, b], i) => Math.round(b * (ri ? (i === 3 ? 1.04 : 0.9) : 1.02))), rox = Math.round(540 * f), total = sum(runs) + sum(st) + rox;
+    S.sessions.push(mkSession('hx_race', d, [{ runs, st, rox, total }], 200 + ri));
+    HX_STATIONS.forEach(([k], i) => S.sessions.push(mkSession('hx_' + k, d, [{ time: st[i] }], 210 + i)));
+    S.sessions.push(mkSession('hx_run', d, [{ time: Math.round(sum(runs) / 8) }], 220), mkSession('hx_rox', d, [{ time: rox }], 221), mkSession('hx_full', d, [{ time: total }], 222));
+  });
+  markPBs(S.sessions); for (const r of sessionsFor('hx_race')) { const pl = S.sessions.filter(x => x.date === r.date && x.pb && goalDef(x.exId).hx && x.exId !== 'hx_race').map(x => x.exId); r.pbList = pl; r.stationPBs = pl.filter(id => goalDef(id).station).length; }
+  S.pbCount = S.sessions.filter(x => x.pb).length;
   for (const g of S.goals) { const first = sessionsFor(g.id)[0]; if (first) g.base = first.key; }
   S.metrics.ftp.current = Math.max(S.metrics.ftp.current, Math.round(bestKey('cyc_ftp')));
   updateBaselines();

@@ -229,3 +229,42 @@ svg.av.static *{animation:none!important}
 .kit button span{font-size:22px}.kit button b{font-size:13px}.kit button small{font-size:11px;color:var(--muted);font-weight:400}.kit button.on{border-color:var(--good)}.kit button.locked{opacity:.5}
 @media (prefers-reduced-motion:reduce){svg.av *{animation:none!important;transition:none!important}}
 .card .name{text-shadow:0 2px 0 rgba(255,255,255,.35)}
+
+/* ---------- v3.2 Hyrox: yellow / black accent ---------- */
+:root { --hx: #ffe000; }
+.exrow.hx { border-left: 4px solid var(--hx); background: linear-gradient(90deg, rgba(255,224,0,.10), rgba(255,224,0,0) 60%), var(--panel, #1b1e27); }
+.exrow.hx .bar i, .hxpanel .bar i { background: var(--hx); }
+.exrow.hx .pct { color: var(--hx); }
+.hxw { display: block; color: var(--hx); font-weight: 700; font-size: 11px; letter-spacing: .02em; }
+.hxw.big { font-size: 13px; font-weight: 500; } .hxw.big b { font-weight: 800; }
+.pick.hx { border-color: rgba(255,224,0,.45); } .pick.hx.on { background: var(--hx); color: #111; border-color: var(--hx); } .pick.hx.on small { color: #333; }
+.pick.hx.race { background: repeating-linear-gradient(135deg, #14161c 0 14px, #1b1d23 14px 28px); border: 2px solid var(--hx); }
+.pick.hx.race.on { background: var(--hx); }
+.hxhead h2 { color: var(--hx); } .hxhead .pill { background: var(--hx); color: #111; }
+.hxpanel { border: 1px solid rgba(255,224,0,.4); background: linear-gradient(180deg, rgba(255,224,0,.07), rgba(0,0,0,0) 80px), #121318; }
+.hxpanel > .ph b, .hxpanel > b { color: var(--hx); font-family: 'Barlow Condensed', sans-serif; font-size: 20px; letter-spacing: .03em; text-transform: uppercase; }
+.hxbtn { background: var(--hx) !important; color: #111 !important; font-weight: 800; }
+.hxtag { background: var(--hx) !important; color: #111 !important; }
+.hxchips .chip.on { background: var(--hx); color: #111; border-color: var(--hx); }
+.hxpanel .seg button.on, .hxpanel .chip.on { background: var(--hx); color: #111; border-color: var(--hx); }
+.hxpanel .seg, .hxpanel .chips { margin: 8px 0; }
+.wtable { display: grid; gap: 4px; margin-top: 8px; } .wtable div { display: flex; justify-content: space-between; font-size: 13px; border-bottom: 1px dashed #2a2d36; padding: 3px 0; } .wtable b { color: var(--hx); }
+.racegrid { display: grid; grid-template-columns: 22px 1fr 1.6fr; gap: 6px 8px; align-items: start; margin: 10px 0; }
+.racegrid > b { color: var(--hx); padding-top: 10px; text-align: center; } .racegrid > small { color: #9aa0ad; }
+.racegrid input { width: 100%; box-sizing: border-box; text-align: center; font-variant-numeric: tabular-nums; }
+.racegrid label { display: flex; flex-direction: column; gap: 2px; margin: 0; } .racegrid label small { font-size: 10.5px; color: #9aa0ad; line-height: 1.2; }
+.racegrid .span2 { grid-column: span 2; }
+.racetotal { display: flex; align-items: baseline; gap: 10px; background: #000; border-radius: 10px; padding: 10px 14px; margin: 8px 0; border-left: 4px solid var(--hx); }
+.racetotal span { color: #9aa0ad; font-size: 12px; text-transform: uppercase; } .racetotal b { font: 800 30px 'Barlow Condensed', sans-serif; color: var(--hx); font-variant-numeric: tabular-nums; }
+.racetotal em { margin-left: auto; font-style: normal; font-size: 12px; font-weight: 700; } .up { color: #3ddc84; } .down { color: #ff6b6b; }
+.racechart { width: 100%; height: auto; margin-top: 6px; }
+.racechart .rl { fill: #9aa0ad; font-size: 10px; } .racechart .rt { fill: #fff; font-size: 10px; font-weight: 700; }
+.racechart .seg.run.c0 { fill: #4a5066; } .racechart .seg.run.c1 { fill: #5d647d; }
+.racechart .seg.st.c0 { fill: #ffe000; } .racechart .seg.st.c1 { fill: #e0b800; } .racechart .seg.rox { fill: #ff5a1f; }
+.legend .lgr, .legend .lgs, .legend .lgx { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 8px; vertical-align: -1px; }
+.lgr { background: #4a5066; } .lgs { background: #ffe000; } .lgx { background: #ff5a1f; }
+.hxpanel .legend { font-size: 11px; color: #9aa0ad; margin: 4px 0; }
+table.splits { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.splits th { text-align: left; color: #9aa0ad; font-weight: 600; font-size: 11px; padding: 4px; } .splits td { padding: 5px 4px; border-top: 1px solid #23262f; }
+.splits td small { display: block; color: #8d93a0; font-size: 10px; } .splits tr.pb td:first-child { color: var(--hx); font-weight: 700; }
+.racelist div { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid #23262f; font-size: 13px; }

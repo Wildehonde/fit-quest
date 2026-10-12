@@ -87,3 +87,11 @@ Matt found the v2 metrics too broad, so tracking is now built around **specific 
 - Save-to-photos and native share sheet; clean branded look that screenshots well.
 - Privacy: no body photos or weight on the card unless the user opts in.
 - Overlay style (Strava/Apple Fitness/Whoop pattern): transparent-background PNG option for stickers over photos/videos; bold condensed sans (e.g. Inter/Barlow Condensed), white text with subtle drop shadow so it reads on any background; one accent colour; large numbers, small labels; light and dark variants.
+
+## Hyrox (v3.2)
+- **Sport** `hyrox` 🟨 in onboarding/Settings sport picker. 12 goals: 8 station times (`hx_ski`, `hx_push`, `hx_pull`, `hx_bbj`, `hx_row`, `hx_farmers`, `hx_lunges`, `hx_wb`), `hx_run` (avg compromised 1 km split), `hx_rox` (total roxzone), `hx_half` (half-sim, test) and `hx_full` (full race, **build-up**: half-sims/station practice in the sport count as baseline). Default targets scale with intensity via `newGoal`.
+- **Division** `S.hyrox = {div: open|pro|adaptive, cat, adapt: llminor|llmajor}` set in the goal picker and Settings. `hxWeight(station)` shows the official load on goal rows, the goal detail page and the race form. Adaptive values come from the 25/26 adaptive rulebook; any value I couldn't confirm reads "see adaptive rulebook". Doubles Mixed reads "check event rulebook". Below-knee prosthetic users see a hint pointing to Adaptive · Lower Limb Minor.
+- **Race log** (`hx_race`, kind `race`): a striped tile in Log step 1 opens a form with 8 runs, 8 stations and roxzone (m:ss), prefilled from the last race and showing a live total plus the delta. `saveRace()` stores `{runs, st, rox, total}` and creates derived sessions for each station, the run average, roxzone and the full race, so every goal updates. Each station PB earns +25 XP, and the count goes in `stationPBs`.
+- **Chart** `raceChart(cur, prev)`: two stacked SVG bars (runs grey, stations yellow, roxzone orange) for this race vs the previous one, plus a split table with the delta and 🏆 marks. It shows on the reward screen and in Train → Hyrox races.
+- **Accent**: `.hx` / `.hxpanel` use #ffe000 on black.
+- **Badges**: First Hyrox, Half-sim, Sub-90, Sub-75, Station Sweep (8 station PBs in one race). **Kit**: Hyrox vest (yellow/black, "HYROX"), unlocked by First Hyrox and auto-equipped.

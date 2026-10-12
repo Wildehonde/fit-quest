@@ -46,3 +46,6 @@ Open http://localhost:8787. Add `?demo` to load 8 weeks of sample data and demo 
 
 ## Not built yet (needs a backend)
 Social, rewards, coach voice, planned rest days, Strava/TrainingPeaks imports, AI coach. See DESIGN.md.
+
+## Hyrox
+Add Hyrox under Sports. Pick your division (Open/Pro/Adaptive · Men/Women/Doubles/Relay) to see the official station weights. After a race, go to **Log workout → Hyrox race** and enter all 8 runs, 8 stations and roxzone. You get the total, per-station PBs and a split chart against your last race. Your first race unlocks the Hyrox vest for your avatar. Test: `node /workspace/pwtest/hx.js` (screenshots `screenshots/hyrox-*.png`).
