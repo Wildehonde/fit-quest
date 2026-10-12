@@ -49,13 +49,16 @@ const KINDS = {
   hold:     { fields: [['sec', 'sec', 5]], unit: 's', keyLabel: 'Longest hold', volLabel: 'Total time (s)' },
   power:    { fields: [['min', 'min', 1], ['watts', 'W', 1]], unit: 'W', keyLabel: 'Best avg power', volLabel: 'Work (kJ)' },
   distance: { fields: [['km', 'km', 0.1], ['min', 'min', 1]], unit: 'km', keyLabel: 'Longest', volLabel: 'Total km' },
+  // 4th field entry = optional (e.g. no power meter)
+  endurance: { fields: [['min', 'min', 5], ['km', 'km', 1], ['watts', 'avg W', 5, true]], unit: 'km', keyLabel: 'Longest', volLabel: 'Total km' },
 };
 const TYPES = { strength: '🏋️ Strength', bodyweight: '🤸 Bodyweight', cycling: '🚴 Cycling', cardio: '🏊 Cardio' };
 
 // Library. base/target are seeds for Matt (edit any time). sug = in the suggested 10.
 const LIBRARY = [
   { id: 'ftptest', name: 'FTP test (20 min)', type: 'cycling', kind: 'power', base: 253, target: 316, sug: 1, note: 'FTP ≈ 95% of 20-min power. Updates your FTP.' },
-  { id: 'z2ride', name: 'Zone 2 ride', type: 'cycling', kind: 'distance', base: 40, target: 80, sug: 1 },
+  { id: 'ride', name: 'Ride', type: 'cycling', kind: 'endurance', base: 40, target: 90, sug: 1, note: 'Duration, distance and average watts (watts optional).' },
+  { id: 'z2ride', name: 'Zone 2 ride', type: 'cycling', kind: 'distance', base: 40, target: 80 },
   { id: 'sweetspot', name: 'Sweet spot 2×20', type: 'cycling', kind: 'power', base: 215, target: 270 },
   { id: 'vo2', name: 'VO2 max intervals', type: 'cycling', kind: 'power', base: 280, target: 340 },
   { id: 'swim', name: 'Swim', type: 'cardio', kind: 'distance', base: 1.5, target: 3, sug: 1 },
@@ -255,7 +258,7 @@ function markActiveDay() {
 }
 function checkBadges() {
   for (const [id, [icon, title, test]] of Object.entries(BADGES)) {
-    if (!S.badges.includes(id) && test(S)) { S.badges.push(id); S.lastUnlock = `${icon} ${title}`; setTimeout(() => toast(`${icon} Badge unlocked: ${title}`), 1400); }
+    if (!S.badges.includes(id) && test(S)) { S.badges.push(id); S.lastUnlock = `${icon} ${title}`; if (R.tab !== 'log') setTimeout(() => toast(`${icon} Badge unlocked: ${title}`), 1400); }
   }
 }
 function setPersona(p) {
@@ -470,8 +473,8 @@ function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcT
 /* ---------- 10) VIEWS ---------- */
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-let R = { tab: 'card', ex: null, range: 'all', more: 'badges', pose: 'front', histKey: 'ovr' };
-function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
+let R = { tab: 'home', ex: null, range: 'all', more: 'badges', pose: 'front', histKey: 'ovr' };
+function toast(msg, force) { if (R.tab === 'log' && !force) return; const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
 function go(tab, extra = {}) { Object.assign(R, { tab, ex: null }, extra); render(); window.scrollTo(0, 0); }
 window.go = go;
 
@@ -609,6 +612,106 @@ const VIEWS = {
   },
 };
 
+
+/* ---------- 10b) HOME + POST-WORKOUT FLOW ---------- */
+let F = null; // flow state while logging
+const QUICK = [['ride', '🚴', 'Ride', 'cycling'], ['run', '🏃', 'Run', 'run'], ['swim', '🏊', 'Swim', 'swim'], ['strength', '🏋️', 'Strength', 'strength'], ['bodyweight', '🤸', 'Bodyweight', 'bodyweight']];
+const quickMatch = (q, id) => { const L = lib(id); return q === 'ride' ? L.type === 'cycling' : q === 'run' ? id === 'run' : q === 'swim' ? id === 'swim' : L.type === q; };
+function recentIds(n = 4) { const seen = []; for (const x of S.sessions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.t - a.t)) if (!seen.includes(x.exId)) seen.push(x.exId); return seen.slice(0, n); }
+function suggestedIds(n = 3) {
+  const lastDate = id => sessionsFor(id).at(-1)?.date || '0000';
+  const recentTypes = new Set(S.sessions.filter(x => x.date >= addDays(today(), -1)).map(x => lib(x.exId).type));
+  const ids = S.exercises.map(e => e.id).filter(id => !recentTypes.has(lib(id).type)).sort((a, b) => lastDate(a).localeCompare(lastDate(b)));
+  const out = [], types = new Set(); // one per type first, so suggestions cover strength and endurance
+  for (const id of ids) if (!types.has(lib(id).type)) { types.add(lib(id).type); out.push(id); }
+  for (const id of ids) if (!out.includes(id)) out.push(id);
+  return out.slice(0, n);
+}
+function seedSets(id) {
+  const last = sessionsFor(id).at(-1); if (last) return structuredClone(last.sets);
+  const L = lib(id), b = (S.exercises.find(e => e.id === id) || L).base;
+  return L.kind === 'weight' ? [1, 2, 3].map(() => ({ reps: 5, kg: Math.round(b / 1.17 / 2.5) * 2.5 })) : L.kind === 'reps' ? [{ reps: Math.round(b) }, { reps: Math.round(b * 0.8) }]
+    : L.kind === 'hold' ? [{ sec: b }] : L.kind === 'power' ? [{ min: 20, watts: b }] : L.kind === 'endurance' ? [{ min: 90, km: b, watts: 180 }] : [{ km: b, min: Math.round(b * (id === 'swim' ? 22 : 6)) }];
+}
+VIEWS.home = () => {
+  const H = S.habits, rec = H.days[today()] || { done: [] }, hDone = rec.done.filter(d => H.active.includes(d)).length;
+  const todays = S.sessions.filter(x => x.date === today()), last = S.sessions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.t - a.t)[0];
+  const iron = S.challenge.lastDate === today(), r = overall(S), hr = new Date().getHours();
+  return `<div class="hello"><small>${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}, ${esc(S.name)}</small><b>${todays.length ? 'Nice work today 💪' : 'Just trained? Log it.'}</b></div>
+    ${!S.hintSeen ? `<div class="panel hint"><b>👋 How to use Fit Quest</b><ol><li>Finish a workout, open the app.</li><li>Tap <b>Log workout</b>: pick what you did, nudge the numbers, tick your habits.</li><li>Collect XP, PBs and unlocks. Share if you like.</li></ol><button class="sm" onclick="S.hintSeen=true;save();render()">Got it</button></div>` : ''}
+    <button class="cta" onclick="startLog()"><span>＋</span>Log workout<small>${todays.length ? `${todays.length} logged today · add more` : 'About 30 seconds'}</small></button>
+    <div class="tiles"><div class="tile hot"><b>${S.streak}</b><small>day streak 🔥</small></div><div class="tile" onclick="go('card')"><b>${r}</b><small>${tier(r)} rating</small></div><div class="tile" onclick="go('challenge')"><b>${S.challenge.day}<em>/${IRON[S.persona].days}</em></b><small>Iron days</small></div></div>
+    <div class="panel"><h3>Today</h3>
+      <button class="status ${todays.length ? 'ok' : ''}" onclick="startLog()"><i>${todays.length ? '✓' : ''}</i>Workout<span>${todays.length ? todays.map(x => lib(x.exId).name).join(', ') : 'Not logged yet'}</span></button>
+      <button class="status ${hDone >= H.active.length ? 'ok' : ''}" onclick="go('today')"><i>${hDone >= H.active.length ? '✓' : ''}</i>Habits<span>${hDone}/${H.active.length} done</span></button>
+      <button class="status ${iron ? 'ok' : ''}" onclick="go('challenge')"><i>${iron ? '✓' : ''}</i>Iron ${IRON[S.persona].days}<span>${iron ? 'Day banked' : `Bank day ${S.challenge.day + 1}`}</span></button></div>
+    ${last ? `<div class="panel callout" onclick="go('train',{ex:'${last.exId}'})"><small>LAST SESSION · ${fmtDate(last.date)}</small><b>${lib(last.exId).name}</b> ${last.sets.map(x => setText(lib(last.exId).kind, x)).join(' · ')} ${last.pb ? '🏆' : ''}</div>` : ''}`;
+};
+window.startLog = () => { F = { step: 1, q: null, sel: [], sets: {}, startXP: S.xp, startBadges: [...S.badges], startSlots: S.habits.slots, startLevel: levelInfo(S.xp).level, startWeight: S.metrics.weight.current }; go('log'); };
+const stepDots = () => `<div class="steps">${[1, 2, 3].map(i => `<i class="${i <= F.step ? 'on' : ''}"></i>`).join('')}</div>`;
+VIEWS.log = () => {
+  if (!F) { R.tab = 'home'; return VIEWS.home(); }
+  if (F.step === 1) {
+    const tile = id => { const L = lib(id), last = sessionsFor(id).at(-1); return `<button class="pick ${F.sel.includes(id) ? 'on' : ''}" onclick="togglePick('${id}')"><b>${L.name}</b><small>${last ? `${fmtDate(last.date)} · ${last.sets.length > 1 ? last.sets.length + ' sets' : setText(L.kind, last.sets[0])}` : TYPES[L.type]}</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`; };
+    const rec = recentIds(), sug = suggestedIds(4).filter(id => !rec.includes(id)), rest = S.exercises.map(e => e.id).filter(id => !rec.includes(id) && !sug.includes(id));
+    const pool = F.q ? [...new Set([...S.exercises.map(e => e.id), ...LIBRARY.map(e => e.id)])].filter(id => quickMatch(F.q, id)) : [];
+    return `${stepDots()}<div class="ph"><h2>What did you do?</h2><button class="x" onclick="F=null;go('home')">✕</button></div>
+      <div class="quick">${QUICK.map(([k, ic, l]) => `<button class="${F.q === k ? 'on' : ''}" onclick="quickPick('${k}')"><span>${ic}</span>${l}</button>`).join('')}</div>
+      ${F.q ? `<h3>${QUICK.find(x => x[0] === F.q)[2]}</h3><div class="picks">${pool.map(tile).join('')}</div>` : ''}
+      ${rec.length ? `<h3>Recent</h3><div class="picks">${rec.map(tile).join('')}</div>` : ''}
+      ${sug.length ? `<h3>Suggested today <small>not done lately</small></h3><div class="picks">${sug.map(tile).join('')}</div>` : ''}
+      ${rest.length ? `<details class="more" ${F.sel.some(id => rest.includes(id)) ? 'open' : ''}><summary>All my exercises (${rest.length})</summary><div class="picks">${rest.map(tile).join('')}</div></details>` : ''}
+      <div class="dock"><button class="wide" ${F.sel.length ? '' : 'disabled'} onclick="F.step=2;render();scrollTo(0,0)">${F.sel.length ? `Next: enter numbers (${F.sel.length})` : 'Pick at least one'}</button></div>`;
+  }
+  if (F.step === 2) {
+    return `${stepDots()}<div class="ph"><h2>Your numbers</h2><button class="x" onclick="F.step=1;render()">‹ Back</button></div><p class="muted">Prefilled from last time. Tap − / + to adjust.</p>
+      ${F.sel.map(id => { const L = lib(id), last = sessionsFor(id).at(-1), sets = F.sets[id] || (F.sets[id] = seedSets(id));
+        return `<div class="panel" id="fx-${id}"><div class="ph"><b class="en">${L.name}</b><small class="muted">${last ? 'Last ' + fmtDate(last.date) : 'First time'}</small></div>
+          ${sets.map((st, i) => `<div class="srow"><span class="sn">${sets.length > 1 ? i + 1 : ''}</span>${KINDS[L.kind].fields.map(([f, lbl, step]) => `<div class="stp"><button onclick="bump('${id}',${i},'${f}',-${step})">−</button><label><input type="number" inputmode="decimal" value="${st[f] ?? ''}" placeholder="–" onchange="setF('${id}',${i},'${f}',this.value)"><small>${lbl}</small></label><button onclick="bump('${id}',${i},'${f}',${step})">+</button></div>`).join('')}
+          ${sets.length > 1 ? `<button class="x" onclick="F.sets['${id}'].splice(${i},1);render()">✕</button>` : ''}</div>`).join('')}
+          <button class="link" onclick="F.sets['${id}'].push(structuredClone(F.sets['${id}'].at(-1)));render()">+ add set</button></div>`; }).join('')}
+      <div class="dock"><button class="wide" onclick="toStep3()">Next: habits</button></div>`;
+  }
+  if (F.step === 3) {
+    const H = S.habits, rec = H.days[today()] || { done: [] }, w = S.metrics.weight.current;
+    return `${stepDots()}<div class="ph"><h2>Today's habits</h2><button class="x" onclick="F.step=2;render()">‹ Back</button></div>
+      <div class="panel">${H.active.map(id => { const on = rec.done.includes(id); return `<button class="hb ${on ? 'on' : ''}" onclick="tickHabit('${id}')"><span>${habit(id).icon}</span>${esc(habit(id).label)}<i>${on ? '✓' : ''}</i></button>`; }).join('')}
+      <p class="muted">Tick what's true so far. You can come back later today.</p></div>
+      ${S.depth === 'detailed' ? `<div class="panel"><b>⚖️ Weigh-in</b> <small class="muted">optional</small><div class="stp big"><button onclick="F.w=+((F.w??${w})-0.1).toFixed(1);render()">−</button><label><input type="number" step="0.1" value="${F.w ?? w}" onchange="F.w=parseFloat(this.value)"><small>kg</small></label><button onclick="F.w=+((F.w??${w})+0.1).toFixed(1);render()">+</button></div></div>` : ''}
+      <div class="dock"><button class="wide" onclick="finishLog()">Finish & collect XP 🎉</button></div>`;
+  }
+  // step 4: reward
+  const gained = S.xp - F.startXP, li = levelInfo(S.xp), newB = S.badges.filter(b => !F.startBadges.includes(b));
+  return `<div class="reward"><div class="burst sm"></div><small>WORKOUT LOGGED</small><div class="xpbig">+${gained}<span>XP</span></div>
+      ${li.level > F.startLevel ? `<div class="lvup">LEVEL UP · LV ${li.level}</div>` : `<div class="muted">Level ${li.level} · ${li.toNext} XP to go</div>`}
+      <div class="xpbar"><i style="width:${li.pct}%"></i></div></div>
+    <div class="tiles"><div class="tile hot"><b>${S.streak}</b><small>day streak 🔥</small></div><div class="tile"><b>${F.res.filter(x => x.cur.pb).length}</b><small>PBs today</small></div><div class="tile"><b>${overall(S)}</b><small>rating</small></div></div>
+    ${F.res.map(({ cur, prev }) => { const L = lib(cur.exId); return `<div class="panel ${cur.pb ? 'pbrow' : ''}"><div class="ph"><b>${cur.pb ? '🏆 ' : ''}${L.name}</b>${cur.pb ? '<span class="pbtag">PB!</span>' : ''}</div><div class="cmp">${compare(prev, cur, L.kind).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div></div>`; }).join('')}
+    ${newB.length || S.habits.slots > F.startSlots ? `<div class="panel glow"><h3>🔓 Unlocked</h3>${newB.map(b => `<div class="unl">${BADGES[b][0]} ${BADGES[b][1]}</div>`).join('')}${S.habits.slots > F.startSlots ? '<div class="unl">🔓 New habit slot</div>' : ''}</div>` : ''}
+    <div class="row"><button onclick="F=null;go('more',{more:'share'})">Share ↗</button><button class="ghost" onclick="F=null;go('home')">Done</button></div>`;
+};
+window.toStep3 = () => { F.step = 3; const rec = S.habits.days[today()]; if (S.habits.active.includes('trained') && !(rec && rec.done.includes('trained'))) tickHabit('trained'); else render(); scrollTo(0, 0); };
+window.quickPick = q => { F.q = F.q === q ? null : q; const main = { ride: 'ride', run: 'run', swim: 'swim' }[q]; if (F.q && main && !F.sel.includes(main)) F.sel.push(main); render(); };
+window.togglePick = id => { F.sel = F.sel.includes(id) ? F.sel.filter(x => x !== id) : [...F.sel, id]; render(); };
+window.bump = (id, i, f, d) => { const st = F.sets[id][i], v = (parseFloat(st[f]) || 0) + d; st[f] = Math.max(0, Math.round(v * 10) / 10); render(); };
+window.setF = (id, i, f, v) => { F.sets[id][i][f] = parseFloat(v); };
+window.finishLog = () => {
+  F.res = [];
+  for (const id of F.sel) {
+    const kind = lib(id).kind, sets = (F.sets[id] || []).map(x => ({ ...x })).filter(st => KINDS[kind].fields.every(([f, , , opt]) => opt || st[f] > 0));
+    sets.forEach(st => KINDS[kind].fields.forEach(([f, , , opt]) => { if (opt && !(st[f] > 0)) delete st[f]; }));
+    if (sets.length) F.res.push(saveSession(id, sets, true));
+  }
+  if (!F.res.length) { F.step = 2; render(); return toast('Enter at least one complete set', true); }
+  if (F.w != null && F.w !== F.startWeight && F.w > 0) {
+    const lowest = F.w < Math.min(F.startWeight, ...S.log.map(e => e.weight)); S.metrics.weight.current = F.w; addXP(XP.weighin, 'weigh-in', true);
+    if (lowest) { S.pbCount++; addXP(XP.pb, 'PB', true); } logPoint();
+  }
+  const H = S.habits, rec = H.days[today()]; // "Trained today" is implied by logging
+  checkBadges(); save(); F.step = 4; render(); scrollTo(0, 0);
+  if (F.res.some(x => x.cur.pb)) { const p = F.res.find(x => x.cur.pb).cur; pbMoment(`${fmtNum(p.key)} ${KINDS[lib(p.exId).kind].unit}`, lib(p.exId).name); }
+};
+
 const MORE = {
   badges() {
     return `<p class="muted">${S.badges.length}/${Object.keys(BADGES).length} unlocked</p><div class="badges">
@@ -673,7 +776,7 @@ function exerciseView(id) {
       <button class="ghost danger" onclick="removeEx('${id}')">Remove from my list</button></details>`;
 }
 const setRow = (kind, s, i) => `<div class="setrow"><span>${i + 1}</span>${KINDS[kind].fields.map(([f, lbl, step]) => `<label><input type="number" inputmode="decimal" step="${step}" data-f="${f}" value="${s[f] ?? ''}" placeholder="0">${lbl}</label>`).join('')}<button class="x" onclick="this.parentNode.remove()">✕</button></div>`;
-const setText = (kind, s) => kind === 'weight' ? `${s.reps}×${s.kg}kg` : kind === 'reps' ? `${s.reps}` : kind === 'hold' ? `${s.sec}s` : kind === 'power' ? `${s.min}′@${s.watts}W` : `${s.km}km/${s.min}′`;
+const setText = (kind, s) => kind === 'endurance' ? `${s.min}′ · ${s.km}km${s.watts ? ` · ${s.watts}W` : ''}` : kind === 'weight' ? `${s.reps}×${s.kg}kg` : kind === 'reps' ? `${s.reps}` : kind === 'hold' ? `${s.sec}s` : kind === 'power' ? `${s.min}′@${s.watts}W` : `${s.km}km/${s.min}′`;
 
 const AFTER = {
   more() { if (R.more === 'share') renderSharePreview(); },
@@ -684,7 +787,7 @@ const AFTER = {
 window.obPersona = p => { S.persona = p; S.exercises = seedExercises(p); S.habits.slots = START_SLOTS[p]; S.habits.active = []; fillSlots(); S.onboardStep = 1; save(); render(); };
 window.obDepth = d => { S.depth = d; S.onboardStep = 2; save(); render(); };
 window.obMetric = (k, f, v) => { S.metrics[k][f] = parseFloat(v); if (f === 'current') S.metrics[k].base = parseFloat(v); save(); };
-window.obFinish = () => { S.onboarded = true; S.modeHistory.push({ date: today(), persona: S.persona }); S.habits.start = today(); save(); R.tab = 'today'; render(); toast(`${PERSONAS[S.persona].icon} ${PERSONAS[S.persona].name} mode activated`); };
+window.obFinish = () => { S.onboarded = true; S.modeHistory.push({ date: today(), persona: S.persona }); S.habits.start = today(); save(); R.tab = 'home'; render(); toast(`${PERSONAS[S.persona].icon} ${PERSONAS[S.persona].name} mode activated`); };
 window.pickPersona = p => { if (p === S.persona) return; const up = PERSONAS[p].rank > PERSONAS[S.persona].rank; setPersona(p); applyMissedDays(); render(); toast(`${PERSONAS[p].icon} ${PERSONAS[p].name} mode${up ? ' · moved up!' : ''}`); };
 window.pickDepth = d => { S.depth = d; save(); render(); toast(`Tracking: ${DEPTHS[d].name}`); };
 window.setMetric = (k, f, v) => { S.metrics[k][f] = parseFloat(v); save(); };
@@ -752,9 +855,21 @@ window.addSet = () => {
 };
 window.logSession = id => {
   const L = lib(id), e = S.exercises.find(x => x.id === id);
-  const sets = [...document.querySelectorAll('#sets .setrow')].map(r => Object.fromEntries([...r.querySelectorAll('input')].map(i => [i.dataset.f, parseFloat(i.value)])))
-    .filter(s => KINDS[L.kind].fields.every(([f]) => Number.isFinite(s[f]) && s[f] > 0));
+  const sets = readSets('#sets', L.kind);
   if (!sets.length) return toast('Enter at least one complete set');
+  const r = saveSession(id, sets, false), prev = r.prev, cur = r.cur;
+  render();
+  $('#cmpout').innerHTML = `<div class="cmp">${prev ? `<small>vs ${fmtDate(prev.date)}</small>` : ''}${compare(prev, cur, L.kind).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div>`;
+};
+function readSets(root, kind) {
+  return [...document.querySelectorAll(root + ' .setrow')].map(r => Object.fromEntries([...r.querySelectorAll('input')].map(i => [i.dataset.f, parseFloat(i.value)])))
+    .filter(s => KINDS[kind].fields.every(([f, , , opt]) => opt ? true : Number.isFinite(s[f]) && s[f] > 0))
+    .map(s => { for (const [f, , , opt] of KINDS[kind].fields) if (opt && !(s[f] > 0)) delete s[f]; return s; });
+}
+// Core save used by the exercise screen and the post-workout flow. quiet = no toasts/PB overlay.
+function saveSession(id, sets, quiet) {
+  const L = lib(id); let e = S.exercises.find(x => x.id === id);
+  if (!e) { e = newExercise(id, S.persona); S.exercises.push(e); }
   const prev = sessionsFor(id).at(-1), prevBest = bestKey(id);
   const cur = { id: uid(), t: Date.now(), exId: id, date: today(), sets, key: keyOf(L.kind, sets), vol: volumeOf(L.kind, sets) };
   cur.pb = prevBest != null && cur.key > prevBest;
@@ -763,11 +878,11 @@ window.logSession = id => {
   S.sessions.push(cur);
   if (id === 'ftptest') { const f = Math.round(cur.key * 0.95); if (f > S.metrics.ftp.current) S.metrics.ftp.current = f; }
   const firstToday = !S.sessions.some(x => x !== cur && x.date === today());
-  addXP(firstToday ? XP.session : 10, 'session logged', cur.pb);
-  if (cur.pb) { S.pbCount++; addXP(XP.pb, 'PB bonus', true); pbMoment(`${fmtNum(cur.key)} ${KINDS[L.kind].unit}`, `${L.name} · +${Math.round(XP.pb * PERSONAS[S.persona].xpMult)} XP`); }
-  markActiveDay(); logPoint(); checkBadges(); save(); render();
-  $('#cmpout').innerHTML = `<div class="cmp">${prev ? `<small>vs ${fmtDate(prev.date)}</small>` : ''}${compare(prev, cur, L.kind).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div>`;
-};
+  addXP(firstToday ? XP.session : 10, 'session logged', quiet || cur.pb);
+  if (cur.pb) { S.pbCount++; addXP(XP.pb, 'PB bonus', true); if (!quiet) pbMoment(`${fmtNum(cur.key)} ${KINDS[L.kind].unit}`, `${L.name} · +${Math.round(XP.pb * PERSONAS[S.persona].xpMult)} XP`); }
+  markActiveDay(); logPoint(); checkBadges(); save();
+  return { cur, prev };
+}
 function pbMoment(big, small) {
   const el = $('#pb'); el.innerHTML = `<div class="burst"></div><div class="pbt">PB!</div><div class="pbv">${esc(big)}</div><div class="pbs">${esc(small)}</div>`;
   el.classList.remove('hidden'); el.onclick = () => el.classList.add('hidden'); clearTimeout(el._h); el._h = setTimeout(() => el.classList.add('hidden'), 2600);
@@ -848,14 +963,14 @@ async function seedDemo() {
     // weekly evaluation as we go
     if (i % 7 === 6) { todayOverride = addDays(d, 1); evaluateHabitWeeks(); todayOverride = null; }
   }
-  const plan = { bench: [70, 0.9], trapdl: [120, 1.7], legpress: [140, 2.6], pullup: [4, 0.35], pushup: [25, 1.4], plank: [60, 6], ftptest: [253, 2.4], z2ride: [40, 2.5], swim: [1.5, 0.08], run: [5, 0.25] };
+  const plan = { bench: [70, 0.9], trapdl: [120, 1.7], legpress: [140, 2.6], pullup: [4, 0.35], pushup: [25, 1.4], plank: [60, 6], ftptest: [253, 2.4], ride: [40, 2.5], swim: [1.5, 0.08], run: [5, 0.25] };
   for (const [id, [b, step]] of Object.entries(plan)) {
     const L = lib(id), e = S.exercises.find(x => x.id === id); e.logged = true; e.base = b;
     for (let w = 0; w < 8; w++) for (let k = 0; k < (L.type === 'strength' ? 2 : 1); k++) {
       const d = addDays(start, w * 7 + (k ? 4 : 1) + (id.length % 2)), v = b + step * (w * 2 + k) * (0.8 + Math.abs(rnd(w, id.length + k)) * 0.4) - (w === 5 ? step * 2 : 0);
       const sets = L.kind === 'weight' ? [{ reps: 5, kg: Math.round(v / (1 + 5 / 30) / 2.5) * 2.5 }, { reps: 5, kg: Math.round(v / (1 + 5 / 30) / 2.5) * 2.5 }, { reps: 8, kg: Math.round(v * 0.7 / 2.5) * 2.5 }]
         : L.kind === 'reps' ? [{ reps: Math.round(v) }, { reps: Math.round(v * 0.8) }] : L.kind === 'hold' ? [{ sec: Math.round(v / 5) * 5 }, { sec: Math.round(v * 0.7 / 5) * 5 }]
-        : L.kind === 'power' ? [{ min: 20, watts: Math.round(v) }] : [{ km: +v.toFixed(1), min: Math.round(v * (L.id === 'swim' ? 22 : L.id === 'run' ? 6.5 : 2)) }];
+        : L.kind === 'power' ? [{ min: 20, watts: Math.round(v) }] : L.kind === 'endurance' ? [{ min: Math.round(v * 2.2), km: +v.toFixed(1), watts: 175 + w * 3 }] : [{ km: +v.toFixed(1), min: Math.round(v * (L.id === 'swim' ? 22 : L.id === 'run' ? 6.5 : 2)) }];
       const best = bestKey(id), key = keyOf(L.kind, sets);
       S.sessions.push({ id: uid(), t: w * 10 + k, exId: id, date: d, sets, key, vol: volumeOf(L.kind, sets), pb: best != null && key > best });
       if (best != null && key > best) S.pbCount++;

@@ -4,6 +4,14 @@
 v2 core is **BUILT** (static app, localStorage + IndexedDB, no backend). Marked inline as ✅ built, 🟡 partly, ⏳ later.
 v1 saves (`fitquest-v1`) migrate automatically to `fitquest-v2`; the v1 key is kept as a backup.
 
+## Daily flow: built around "I just finished a workout" ✅ built (12 Oct 2026, from Matt's v2 feedback)
+- The app opens on **Home**: one big **Log workout** button, the streak, the rating, Iron days, and a Today status (workout / habits / Iron day). There's a dismissible first-run hint.
+- Log flow: 1) **Pick**: Ride/Run/Swim/Strength/Bodyweight quick buttons, then Recent, Suggested today (oldest-done first, one per type, skipping types trained in the last day), and all my exercises. Multi-select.
+  2) **Numbers**: prefilled from last time (or sensible seeds), big −/+ steppers per field, add/remove sets. Rides log duration + distance + avg watts (watts optional); runs and swims log distance + time.
+  3) **Habits**: today's habits on the same flow, with "Trained today" auto-ticked, plus an optional weigh-in stepper (Detailed mode).
+  4) **Reward**: XP gained (level-up callout), the streak, PBs with a comparison to last session, new badges or habit slots, then **Share** (opens the share card) or **Done**.
+- Card, Train, Iron 75, Photos and More are secondary tabs. Today (the full habit screen with wishlist and override) is reached from Home › Habits.
+
 ## Onboarding ✅ built
 1. Intensity: Beginner / Athlete / Goggins (can drop down or move up anytime; badge for moving up).
 2. Tracking depth: High level (daily yes/no habits) or Detailed (workout metrics). Can switch later.
