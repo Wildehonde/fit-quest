@@ -2,35 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Fit Quest">
 <title>Fit Quest</title>
-<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800;900&family=Inter:wght@400;600;800&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<!-- Top bar: level + XP -->
 <header id="topbar">
   <div class="brand">FIT<span>QUEST</span></div>
   <div id="levelbox"></div>
 </header>
-
 <main id="view"></main>
-
-<!-- Bottom navigation (hidden during onboarding) -->
 <nav id="nav">
-  <button data-tab="card">🃏<span>Card</span></button>
-  <button data-tab="checkin">✅<span>Check-in</span></button>
-  <button data-tab="challenge">🔥<span>Iron 75</span></button>
-  <button data-tab="badges">🏅<span>Badges</span></button>
-  <button data-tab="history">📈<span>History</span></button>
-  <button data-tab="settings">⚙️<span>Setup</span></button>
+  <button data-tab="card"><i>🃏</i><span>Card</span></button>
+  <button data-tab="today"><i>✅</i><span>Today</span></button>
+  <button data-tab="train"><i>🏋️</i><span>Train</span></button>
+  <button data-tab="challenge"><i>🔥</i><span>Iron 75</span></button>
+  <button data-tab="photos"><i>📸</i><span>Photos</span></button>
+  <button data-tab="more"><i>☰</i><span>More</span></button>
 </nav>
+<div id="modal" class="hidden"></div>
+<div id="pb" class="hidden"></div>
 <div id="toast"></div>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
