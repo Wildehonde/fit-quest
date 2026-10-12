@@ -176,3 +176,13 @@ nav button.on{color:var(--acc)}nav button.on i{filter:none;opacity:1;transform:t
 .unl{font-weight:700;padding:4px 0}
 details.more{margin-top:12px}details.more summary{padding:10px 0;color:var(--muted);font-weight:700}
 .srow:has(.stp:nth-of-type(3)) .stp button{padding:0 6px;font-size:20px}.srow:has(.stp:nth-of-type(3)) .stp input{font-size:17px}.srow:has(.stp:nth-of-type(3)) .stp{min-width:0}
+/* ===== v3 sports, goals, baselines ===== */
+.sports{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.sports button{justify-content:flex-start;background:var(--panel);border:2px solid #1f2438;color:var(--text);gap:10px;min-height:56px}
+.sports button span{font-size:22px}.sports button i{margin-left:auto;font-style:normal;color:var(--good);font-weight:900}.sports button.on{border-color:var(--acc);background:rgba(255,90,31,.1)}
+.chip.on{border-color:var(--good);background:rgba(46,229,157,.12);color:var(--good)}.chip em,.tag{font-style:normal;font-size:10px;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:.5px;margin-left:4px}
+.gtgt{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}.gtgt label{display:flex;align-items:center;gap:6px;white-space:nowrap}.gtgt input{width:96px;padding:6px 8px;font-size:14px}
+.exrow.parked{opacity:.45;filter:grayscale(.8)}.parkrow{display:flex;gap:8px;align-items:center}.parkrow .exrow{flex:1;margin-bottom:0}.parkrow{margin-bottom:8px}
+.baseline{border-color:var(--acc2)}.bl{width:100%;justify-content:flex-start;background:var(--panel2);color:var(--text);margin:6px 0;gap:10px;font-weight:600;text-align:left;font-size:14px}
+.bl b{font-weight:600;flex:1}.bl i{font-style:normal;color:var(--muted)}.bl.urgent{border:2px solid var(--bad);background:rgba(255,77,109,.1)}.bl.urgent i{color:var(--bad)}
+.implied{padding:10px 12px;border-radius:12px;background:rgba(46,229,157,.08);border:1px dashed var(--good);margin-bottom:6px;font-size:14px}
+.picks.one{grid-template-columns:1fr;margin-bottom:4px}.pick.gen{border-style:dashed}.pick.need{border-color:var(--acc2)}

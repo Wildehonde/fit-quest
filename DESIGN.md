@@ -4,9 +4,24 @@
 v2 core is **BUILT** (static app, localStorage + IndexedDB, no backend). Marked inline as ✅ built, 🟡 partly, ⏳ later.
 v1 saves (`fitquest-v1`) migrate automatically to `fitquest-v2`; the v1 key is kept as a backup.
 
+## Goals-based tracking (v3, 12 Oct 2026) ✅ built
+Matt found the v2 metrics too broad, so tracking is now built around **specific benchmark goals** he picks up front.
+- Onboarding: intensity → tracking depth → **sports** (Running, Cycling, Swimming, Rowing, Strength, Bodyweight) → **goals** per sport, each with an optional target (defaults scaled by intensity, times entered as mm:ss) → weight/FTP → habits. Editable later in Settings › Sports & goals or Train › Edit goals.
+- Catalog: Running 400 m, 1 km, 1 mile, 3 km, 5 km, parkrun 5 km, 10 km, 15 km, 21.1 km, 42.2 km, furthest in 30/60 min. Cycling FTP (20-min test, FTP = 95%), 5-min and 1-min power, 10/20/40 km TT, 100 km ride. Swimming 50/100/200/400/750 m, 1.5/1.9/3.8 km, CSS pace. Rowing 500 m, 2 km, 5 km, 10 km erg. Strength 1RM and 5RM for squat, deadlift, trap-bar deadlift, bench, OHP, row, leg press, RDL, hip thrust. Bodyweight max push-ups/pull-ups/chin-ups/dips, plank/side-plank/wall-sit holds.
+- Logging = pick the goal(s) attempted and enter the result: a time for distances (lower is better), watts for power, kg × reps for lifts (est. 1RM/5RM via Epley), reps or seconds for bodyweight. PBs, history charts (time charts are inverted, so up = faster) and progress are per goal; active goals' average progress is half of the overall rating (with weight, W/kg and consistency). The broad hours/sleep/steps/strength-per-week metrics were dropped from the score (sleep and steps live on as habits).
+- **General training session**: sport + duration (+ optional km). Counts for XP, streak and "trained", no PB.
+- **Two goal types and the 14-day baseline rule**:
+  - *Test* goals (1–10 km runs, FTP, power, TTs, short swims, CSS, erg tests, lifts, bodyweight): need a real attempt within 14 days of being picked.
+  - *Build-up* goals (15 km, half and full marathon, 1.5/1.9/3.8 km swims, 100 km ride, 10 km row): any logged session in that sport within 14 days is the stepping-stone baseline. Their chart shows the longest distance so far building toward the full distance (up to 80% of progress); the real PB is the finish time when you complete the distance (the last 20%).
+  - Home shows a **Baseline week** checklist with a countdown per goal ("Set your 5 km baseline – 9 days left"); ≤3 days left turns red with ⚠️, and the log flow lists "Needs a baseline" first.
+  - After 14 days with no baseline the goal is **Parked**: kept, shown dimmed in a Parked list, left out of the rating, no more prompts. One-tap **Re-activate** starts a fresh 14-day window.
+  - 🎯 **Baselines Locked In** badge: every goal (min 3) got its baseline in time, with none ever parked. 🏅 Distance Finisher for completing a build-up distance.
+- Migration from v2 exercises: lifts → the matching 1RM goal, pull-ups/push-ups/dips/plank/side plank → the matching bodyweight goal, FTP test → FTP (×0.95), 20-min and 5-min power efforts → FTP / 5-min power, runs/swims/rows within 10% of a goal distance → that goal (time scaled to the exact distance). Everything else becomes a general training session in the right sport. Migrated goals keep their first session as the baseline.
+- Bug fixed: the log flow no longer asks about "Trained today" again. Logging implies it, and step 3 shows "✅ Trained today counted from this log". The Today check-in no longer has an "I trained today" box.
+
 ## Daily flow: built around "I just finished a workout" ✅ built (12 Oct 2026, from Matt's v2 feedback)
 - The app opens on **Home**: one big **Log workout** button, the streak, the rating, Iron days, and a Today status (workout / habits / Iron day). There's a dismissible first-run hint.
-- Log flow: 1) **Pick**: Ride/Run/Swim/Strength/Bodyweight quick buttons, then Recent, Suggested today (oldest-done first, one per type, skipping types trained in the last day), and all my exercises. Multi-select.
+- Log flow: 1) **Pick**: your sports as quick buttons, a General training session tile, Needs a baseline, Recent, Suggested today (oldest-done first, one per type, skipping types trained in the last day), and all my exercises. Multi-select.
   2) **Numbers**: prefilled from last time (or sensible seeds), big −/+ steppers per field, add/remove sets. Rides log duration + distance + avg watts (watts optional); runs and swims log distance + time.
   3) **Habits**: today's habits on the same flow, with "Trained today" auto-ticked, plus an optional weigh-in stepper (Detailed mode).
   4) **Reward**: XP gained (level-up callout), the streak, PBs with a comparison to last session, new badges or habit slots, then **Share** (opens the share card) or **Done**.
@@ -16,7 +31,7 @@ v1 saves (`fitquest-v1`) migrate automatically to `fitquest-v2`; the v1 key is k
 1. Intensity: Beginner / Athlete / Goggins (can drop down or move up anytime; badge for moving up).
 2. Tracking depth: High level (daily yes/no habits) or Detailed (workout metrics). Can switch later.
 
-## Detailed mode: exercise tracker ✅ built (22-exercise library, 10 suggested, SVG history charts with PB markers, volume bars, target line, 4W/3M/All)
+## Detailed mode: exercise tracker ✅ built in v2, replaced in v3 by goals-based tracking (see above) (was a 22-exercise library, 10 suggested, SVG history charts with PB markers, volume bars, target line, 4W/3M/All)
 - Long exercise library grouped by type (strength, cardio, bodyweight, cycling).
 - App suggests 10 exercises + targets (based on first log + intensity); user can change manually.
 - Log sets x reps x weight (or time/distance/watts); instantly compare to last session (e.g. +10kg, volume +25%).

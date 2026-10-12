@@ -2,7 +2,7 @@
    Fit Quest v2 – gamified fitness tracker (plain JS, no build step)
    Data: localStorage (STORE_KEY) + IndexedDB for progress photos.
    Sections: 1) config 2) state+migration 3) scoring 4) game rules
-             5) exercises 6) habits 7) photos 8) charts 9) share cards
+             5) goals 6) habits 7) photos 8) charts 9) share cards
              10) views 11) actions 12) boot + demo
    ===================================================================== */
 
@@ -42,44 +42,54 @@ const IRON = {
 
 const XP = { checkin: 20, workout: 30, weighin: 10, pb: 75, challengeDay: 40, habitDay: 15, session: 30, photo: 25, slot: 100 };
 
-// Kinds of exercise logging. key = the number a PB is measured on.
+// Goal kinds. lower = smaller is better (times). Field spec: [name, label, step, optional, type]
 const KINDS = {
-  weight:   { fields: [['reps', 'reps', 1], ['kg', 'kg', 0.5]], unit: 'kg e1RM', keyLabel: 'Est. 1RM', volLabel: 'Volume (kg)' },
-  reps:     { fields: [['reps', 'reps', 1]], unit: 'reps', keyLabel: 'Best set', volLabel: 'Total reps' },
-  hold:     { fields: [['sec', 'sec', 5]], unit: 's', keyLabel: 'Longest hold', volLabel: 'Total time (s)' },
-  power:    { fields: [['min', 'min', 1], ['watts', 'W', 1]], unit: 'W', keyLabel: 'Best avg power', volLabel: 'Work (kJ)' },
-  distance: { fields: [['km', 'km', 0.1], ['min', 'min', 1]], unit: 'km', keyLabel: 'Longest', volLabel: 'Total km' },
-  // 4th field entry = optional (e.g. no power meter)
-  endurance: { fields: [['min', 'min', 5], ['km', 'km', 1], ['watts', 'avg W', 5, true]], unit: 'km', keyLabel: 'Longest', volLabel: 'Total km' },
+  time:    { fields: [['time', 'time', 5, false, 'time']], lower: true, unit: '', keyLabel: 'Best time' },
+  build:   { fields: [['time', 'finish time', 60, false, 'time']], lower: true, unit: '', keyLabel: 'Finish PB' },
+  far:     { fields: [['km', 'km', 0.1]], unit: 'km', keyLabel: 'Furthest' },
+  watts:   { fields: [['watts', 'avg W', 5]], unit: 'W', keyLabel: 'Best' },
+  rm:      { fields: [['reps', 'reps', 1], ['kg', 'kg', 2.5]], unit: 'kg', keyLabel: 'Est.' },
+  reps:    { fields: [['reps', 'reps', 1]], unit: 'reps', keyLabel: 'Best set' },
+  hold:    { fields: [['sec', 'sec', 5]], unit: 's', keyLabel: 'Longest hold' },
+  session: { fields: [['min', 'min', 5], ['km', 'km', 0.5, true]], unit: 'min', keyLabel: 'Duration' },
 };
-const TYPES = { strength: '🏋️ Strength', bodyweight: '🤸 Bodyweight', cycling: '🚴 Cycling', cardio: '🏊 Cardio' };
+const SPORTS = { run: ['🏃', 'Running'], cycle: ['🚴', 'Cycling'], swim: ['🏊', 'Swimming'], row: ['🚣', 'Rowing'], strength: ['🏋️', 'Strength'], bodyweight: ['🤸', 'Bodyweight'] };
+const sportName = k => SPORTS[k] ? `${SPORTS[k][0]} ${SPORTS[k][1]}` : '💪 Training';
+const DEFAULT_SPORTS = ['run', 'cycle', 'swim', 'strength', 'bodyweight'];
 
-// Library. base/target are seeds for Matt (edit any time). sug = in the suggested 10.
-const LIBRARY = [
-  { id: 'ftptest', name: 'FTP test (20 min)', type: 'cycling', kind: 'power', base: 253, target: 316, sug: 1, note: 'FTP ≈ 95% of 20-min power. Updates your FTP.' },
-  { id: 'ride', name: 'Ride', type: 'cycling', kind: 'endurance', base: 40, target: 90, sug: 1, note: 'Duration, distance and average watts (watts optional).' },
-  { id: 'z2ride', name: 'Zone 2 ride', type: 'cycling', kind: 'distance', base: 40, target: 80 },
-  { id: 'sweetspot', name: 'Sweet spot 2×20', type: 'cycling', kind: 'power', base: 215, target: 270 },
-  { id: 'vo2', name: 'VO2 max intervals', type: 'cycling', kind: 'power', base: 280, target: 340 },
-  { id: 'swim', name: 'Swim', type: 'cardio', kind: 'distance', base: 1.5, target: 3, sug: 1 },
-  { id: 'run', name: 'Run', type: 'cardio', kind: 'distance', base: 5, target: 10, sug: 1, note: 'Running blade or walking leg, log whichever you use.' },
-  { id: 'row', name: 'Row erg', type: 'cardio', kind: 'distance', base: 4, target: 8 },
-  { id: 'ski', name: 'Ski erg', type: 'cardio', kind: 'distance', base: 2, target: 5 },
-  { id: 'bench', name: 'Bench press', type: 'strength', kind: 'weight', base: 70, target: 90, sug: 1 },
-  { id: 'trapdl', name: 'Trap-bar deadlift', type: 'strength', kind: 'weight', base: 120, target: 160, sug: 1 },
-  { id: 'legpress', name: 'Leg press', type: 'strength', kind: 'weight', base: 140, target: 200, sug: 1, note: 'Single-leg or both, keep it consistent.' },
-  { id: 'ohp', name: 'Overhead press', type: 'strength', kind: 'weight', base: 45, target: 60 },
-  { id: 'row_c', name: 'Seated cable row', type: 'strength', kind: 'weight', base: 70, target: 95 },
-  { id: 'latpd', name: 'Lat pulldown', type: 'strength', kind: 'weight', base: 70, target: 95 },
-  { id: 'rdl', name: 'Romanian deadlift', type: 'strength', kind: 'weight', base: 90, target: 130 },
-  { id: 'hipthrust', name: 'Hip thrust', type: 'strength', kind: 'weight', base: 100, target: 160 },
-  { id: 'pullup', name: 'Pull-ups', type: 'bodyweight', kind: 'reps', base: 4, target: 10, sug: 1 },
-  { id: 'pushup', name: 'Push-ups', type: 'bodyweight', kind: 'reps', base: 25, target: 50, sug: 1 },
-  { id: 'dips', name: 'Dips', type: 'bodyweight', kind: 'reps', base: 8, target: 20 },
-  { id: 'plank', name: 'Plank', type: 'bodyweight', kind: 'hold', base: 60, target: 180, sug: 1 },
-  { id: 'sideplank', name: 'Side plank', type: 'bodyweight', kind: 'hold', base: 30, target: 90 },
-  { id: 'glutebr', name: 'Single-leg glute bridge', type: 'bodyweight', kind: 'reps', base: 12, target: 25 },
+// Goal catalog. 'test' goals need a real attempt within 14 days of picking them; 'build' goals (long distances)
+// accept any session in that sport as a stepping-stone baseline; the real PB is set when you finish the distance.
+// base/target are seeds for Matt (times in seconds); targets are scaled by intensity and editable.
+const Tm = (m, s = 0) => m * 60 + s;
+const G = (sport, id, name, kind, base, target, extra = {}) => ({ sport, id, name, kind, base, target, type: kind === 'build' ? 'build' : 'test', ...extra });
+const GOALS = [
+  G('run', 'run_400', '400 m', 'time', 105, 85, { dist: 0.4 }), G('run', 'run_1k', '1 km', 'time', Tm(5), Tm(4), { dist: 1 }),
+  G('run', 'run_mile', '1 mile', 'time', Tm(8, 20), Tm(6, 40), { dist: 1.609 }), G('run', 'run_3k', '3 km', 'time', Tm(16), Tm(13), { dist: 3 }),
+  G('run', 'run_5k', '5 km', 'time', Tm(28), Tm(23), { dist: 5 }), G('run', 'run_parkrun', 'parkrun 5 km', 'time', Tm(29), Tm(24), { dist: 5 }),
+  G('run', 'run_10k', '10 km', 'time', Tm(60), Tm(49), { dist: 10 }), G('run', 'run_15k', '15 km', 'build', Tm(95), Tm(78), { dist: 15 }),
+  G('run', 'run_21', 'Half marathon 21.1 km', 'build', Tm(130), Tm(110), { dist: 21.1 }), G('run', 'run_42', 'Marathon 42.2 km', 'build', Tm(290), Tm(240), { dist: 42.2 }),
+  G('run', 'run_far30', 'Furthest in 30 min', 'far', 5, 6.5), G('run', 'run_far60', 'Furthest in 60 min', 'far', 9.5, 12),
+  G('cycle', 'cyc_ftp', 'FTP (20-min test)', 'watts', 240, 300, { factor: 0.95, note: 'Enter your 20-min average power. FTP = 95% of it.' }),
+  G('cycle', 'cyc_5min', '5-min power', 'watts', 300, 360), G('cycle', 'cyc_1min', '1-min power', 'watts', 450, 560),
+  G('cycle', 'cyc_tt10', '10 km TT', 'time', Tm(17), Tm(15), { dist: 10 }), G('cycle', 'cyc_tt20', '20 km TT', 'time', Tm(36), Tm(31), { dist: 20 }),
+  G('cycle', 'cyc_tt40', '40 km TT', 'time', Tm(75), Tm(64), { dist: 40 }), G('cycle', 'cyc_100', '100 km ride', 'build', Tm(210), Tm(180), { dist: 100 }),
+  G('swim', 'swim_50', '50 m', 'time', 50, 40, { dist: 0.05 }), G('swim', 'swim_100', '100 m', 'time', 115, 95, { dist: 0.1 }),
+  G('swim', 'swim_200', '200 m', 'time', 250, 205, { dist: 0.2 }), G('swim', 'swim_400', '400 m', 'time', Tm(9), Tm(7, 30), { dist: 0.4 }),
+  G('swim', 'swim_750', '750 m (sprint tri)', 'time', Tm(18), Tm(15), { dist: 0.75 }), G('swim', 'swim_1500', '1.5 km (Olympic tri)', 'build', Tm(36), Tm(30), { dist: 1.5 }),
+  G('swim', 'swim_1900', '1.9 km (70.3)', 'build', Tm(46), Tm(38), { dist: 1.9 }), G('swim', 'swim_3800', '3.8 km (Ironman)', 'build', Tm(95), Tm(78), { dist: 3.8 }),
+  G('swim', 'swim_css', 'CSS pace / 100 m', 'time', 125, 105, { note: 'Critical Swim Speed from a 400 m + 200 m test: (T400 − T200) ÷ 2.' }),
+  G('row', 'row_500', '500 m erg', 'time', Tm(2), Tm(1, 45), { dist: 0.5 }), G('row', 'row_2k', '2 km erg', 'time', Tm(8, 30), Tm(7, 30), { dist: 2 }),
+  G('row', 'row_5k', '5 km erg', 'time', Tm(22), Tm(19, 30), { dist: 5 }), G('row', 'row_10k', '10 km erg', 'build', Tm(46), Tm(41), { dist: 10 }),
+  G('bodyweight', 'bw_pushup', 'Max push-ups', 'reps', 25, 50), G('bodyweight', 'bw_pullup', 'Max pull-ups', 'reps', 4, 12),
+  G('bodyweight', 'bw_chinup', 'Max chin-ups', 'reps', 5, 12), G('bodyweight', 'bw_dips', 'Max dips', 'reps', 8, 20),
+  G('bodyweight', 'bw_plank', 'Plank hold', 'hold', 60, 180), G('bodyweight', 'bw_side', 'Side plank hold', 'hold', 30, 90),
+  G('bodyweight', 'bw_wallsit', 'Wall sit hold', 'hold', 60, 150),
 ];
+for (const [k, n, b] of [['squat', 'Back squat', 90], ['deadlift', 'Deadlift', 130], ['trapdl', 'Trap-bar deadlift', 140], ['bench', 'Bench press', 80],
+  ['ohp', 'Overhead press', 50], ['row', 'Barbell row', 70], ['legpress', 'Leg press', 160], ['rdl', 'Romanian deadlift', 100], ['hip', 'Hip thrust', 120]])
+  for (const r of [1, 5]) { const f = r === 1 ? 1 : 0.86; GOALS.push(G('strength', `str_${k}_${r}`, `${n} ${r}RM`, 'rm', Math.round(b * f / 2.5) * 2.5, Math.round(b * 1.3 * f / 2.5) * 2.5, { n: r })); }
+const DEFAULT_GOALS = ['run_5k', 'run_10k', 'run_21', 'cyc_ftp', 'cyc_5min', 'cyc_100', 'swim_400', 'swim_css', 'swim_1900', 'str_trapdl_1', 'str_bench_5', 'bw_pullup', 'bw_plank'];
+const BASELINE_DAYS = 14;
 
 // Habits: core 3 to start (Goggins starts with 5), the rest unlock one slot per strong week.
 const HABITS = [
@@ -108,6 +118,8 @@ const BADGES = {
   level5:    ['⭐', 'Level 5', s => levelInfo(s.xp).level >= 5],
   level10:   ['🌟', 'Level 10', s => levelInfo(s.xp).level >= 10],
   upgrade:   ['📈', 'Moved Up a Mode', s => s.upgraded],
+  baselines: ['🎯', 'Baselines Locked In', s => !s.everParked && s.goals.length >= 3 && s.goals.every(g => g.baselineDate)],
+  finisher:  ['🏅', 'Distance Finisher', s => s.sessions.some(x => goalDef(x.exId).type === 'build')],
   firstpb:   ['🏆', 'First PB', s => s.pbCount >= 1],
   pb10:      ['🥊', '10 PBs', s => s.pbCount >= 10],
   sessions25:['🗓️', '25 Sessions', s => s.sessions.length >= 25],
@@ -130,40 +142,79 @@ const weekStart = k => { const d = new Date(k + 'T12:00:00'); return addDays(k, 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const fmtDate = k => new Date(k + 'T12:00:00').toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
 
-function seedExercises(persona = 'athlete') {
-  return LIBRARY.filter(e => e.sug).map(e => newExercise(e.id, persona));
+const roundFor = (L, v) => L.kind === 'time' || L.kind === 'build' ? Math.round(v) : L.kind === 'rm' ? Math.round(v / 2.5) * 2.5 : +(+v).toFixed(1);
+function newGoal(id, persona) {
+  const L = goalDef(id), m = PERSONAS[persona || 'athlete'].targetMult;
+  return { id, base: L.base, target: roundFor(L, L.base + (L.target - L.base) * m), targetEdited: false, status: 'active', since: today(), baselineDate: null };
 }
-function newExercise(id, persona) {
-  const L = LIBRARY.find(e => e.id === id), m = PERSONAS[persona || 'athlete'].targetMult;
-  const target = +(L.base + (L.target - L.base) * m).toFixed(1);
-  return { id: L.id, base: L.base, target, targetEdited: false, logged: false };
-}
+const seedGoals = persona => DEFAULT_GOALS.map(id => newGoal(id, persona));
 function freshState() {
-  return { version: 2, onboarded: false, onboardStep: 0, persona: null, depth: 'detailed', name: 'Matt', xp: 0,
+  return { version: 3, onboarded: false, onboardStep: 0, persona: null, depth: 'detailed', name: 'Matt', xp: 0,
     metrics: structuredClone(DEFAULT_METRICS), log: [], streak: 0, bestStreak: 0, lastCheckin: null, badges: [],
     upgraded: false, modeHistory: [],
     challenge: { day: 0, lastDate: null, todays: {}, todaysDate: null, completed: 0, startDate: null },
-    exercises: seedExercises(), sessions: [], pbCount: 0,
+    sports: [...DEFAULT_SPORTS], goals: seedGoals(), everParked: false, sessions: [], pbCount: 0,
     habits: { active: HABITS.filter(h => h.core).map(h => h.id), slots: 3, earnedSlots: 0, wishlist: [], paused: [],
       days: {}, start: today(), evaluatedTo: null, weakWeeks: 0, override: false, weekLog: [] },
     photoCount: 0, photoWeeks: 0, share: { weight: false, photo: false } };
 }
-// Fill any missing fields from a fresh state (works for v1 data and older v2 saves).
+// Fill any missing fields from a fresh state (v1 data, v2 exercise data, older v3 saves).
 function migrate(old) {
   const s = freshState();
   if (!old) return s;
-  const out = { ...s, ...old, version: 2 };
+  const out = { ...s, ...old, version: 3 };
   out.metrics = { ...s.metrics, ...(old.metrics || {}) };
   out.challenge = { ...s.challenge, ...(old.challenge || {}) };
   out.habits = { ...s.habits, ...(old.habits || {}) };
   out.share = { ...s.share, ...(old.share || {}) };
-  if (!old.version) { // v1 -> v2
-    out.onboarded = !!old.persona; out.depth = 'detailed';
-    if (old.persona) { out.exercises = seedExercises(old.persona); out.habits.slots = START_SLOTS[old.persona]; out.habits.active = HABITS.slice(0, out.habits.slots).map(h => h.id); }
-    // v1 Goggins saved Iron 75 days up to 75; v2 tiers cap per persona.
+  if (!old.version) { // v1 -> v3
+    out.onboarded = !!old.persona; out.depth = 'detailed'; out.sessions = [];
+    if (old.persona) { out.goals = seedGoals(old.persona); out.habits.slots = START_SLOTS[old.persona]; out.habits.active = HABITS.slice(0, out.habits.slots).map(h => h.id); }
     if (old.persona) out.challenge.day = Math.min(out.challenge.day, IRON[old.persona].days);
   }
+  if (old.exercises && !old.goals) migrateExercises(out, old); // v2 exercises -> v3 goals
+  delete out.exercises;
   return out;
+}
+// v2 exercise ids -> closest v3 goal (same measure), or a general training session.
+const V2_MAP = { bench: 'str_bench_1', trapdl: 'str_trapdl_1', legpress: 'str_legpress_1', ohp: 'str_ohp_1', row_c: 'str_row_1', rdl: 'str_rdl_1', hipthrust: 'str_hip_1',
+  pullup: 'bw_pullup', pushup: 'bw_pushup', dips: 'bw_dips', plank: 'bw_plank', sideplank: 'bw_side' };
+const V2_SPORT = { ride: 'cycle', z2ride: 'cycle', sweetspot: 'cycle', vo2: 'cycle', ftptest: 'cycle', run: 'run', swim: 'swim', row: 'row', ski: 'row', latpd: 'strength', glutebr: 'bodyweight' };
+function migrateExercises(out, old) {
+  const sessions = [], firstDate = {};
+  for (const x of (old.sessions || []).slice().sort((a, b) => a.date.localeCompare(b.date) || a.t - b.t)) {
+    let gid = V2_MAP[x.exId], sets = x.sets;
+    const sport = V2_SPORT[x.exId] || (gid ? goalDef(gid).sport : 'strength');
+    if (['ftptest', 'sweetspot', 'vo2'].includes(x.exId)) {
+      const min = +(x.sets[0] || {}).min || 20;
+      gid = x.exId === 'ftptest' || Math.abs(min - 20) <= 2 ? 'cyc_ftp' : Math.abs(min - 5) <= 1 ? 'cyc_5min' : null;
+      if (gid) sets = x.sets.map(s => ({ watts: +s.watts }));
+    }
+    if (!gid && ['run', 'swim', 'row', 'ski'].includes(x.exId)) { // distance + time -> nearest timed goal within 10%
+      const s0 = x.sets.reduce((a, b) => (+b.km > +a.km ? b : a), x.sets[0] || {});
+      const c = GOALS.filter(g => g.sport === sport && g.dist && g.kind === 'time' && Math.abs(g.dist - s0.km) / g.dist <= 0.1).sort((a, b) => Math.abs(a.dist - s0.km) - Math.abs(b.dist - s0.km))[0];
+      if (c && s0.min) { gid = c.id; sets = [{ time: Math.round(s0.min * 60 * c.dist / s0.km) }]; }
+    }
+    if (gid) { firstDate[gid] ??= x.date; sessions.push(mkSession(gid, x.date, sets, x.t)); }
+    else {
+      const min = x.sets.reduce((a, s) => a + (+s.min || 0), 0) || 45, km = x.sets.reduce((a, s) => a + (+s.km || 0), 0);
+      sessions.push({ id: x.id || uid(), t: x.t || 0, exId: 'session', sport, date: x.date, sets: [km ? { min, km } : { min }], key: null, vol: null, from: x.exId });
+    }
+  }
+  out.sessions = sessions; markPBs(out.sessions);
+  const goals = Object.keys(firstDate).map(id => {
+    const g = newGoal(id, old.persona), oe = (old.exercises || []).find(e => V2_MAP[e.id] === id);
+    const first = sessions.find(x => x.exId === id);
+    Object.assign(g, { base: first.key, since: firstDate[id], baselineDate: firstDate[id] });
+    if (oe && oe.targetEdited) { g.target = oe.target; g.targetEdited = true; }
+    if ((goalDef(id).kind === 'time' ? g.target >= g.base : g.target <= g.base)) g.target = roundFor(goalDef(id), g.base + (goalDef(id).target - goalDef(id).base) * 0.5);
+    return g;
+  });
+  out.goals = goals.length ? goals : seedGoals(old.persona);
+  out.sports = [...new Set([...out.goals.map(g => goalDef(g.id).sport), ...sessions.map(x => x.sport)])].filter(k => SPORTS[k]);
+  if (!out.sports.length) out.sports = [...DEFAULT_SPORTS];
+  const ftpS = sessions.filter(x => x.exId === 'cyc_ftp').map(x => x.key); if (ftpS.length) out.metrics.ftp.current = Math.max(out.metrics.ftp.current, Math.round(Math.max(...ftpS)));
+  out._migratedGoals = true;
 }
 function load() {
   const v2 = localStorage.getItem(STORE_KEY);
@@ -184,32 +235,31 @@ function wkgProgress(s) {
   const m = s.metrics;
   return progress({ base: m.ftp.base / m.weight.base, target: m.ftp.target / m.weight.target, current: wkg(s) });
 }
-function exProgress(ex) { return progress({ base: ex.base, target: ex.target, current: bestKey(ex.id) ?? ex.base }); }
-function exGroupProgress(s, types) {
-  const list = s.exercises.filter(e => types.includes(lib(e.id).type));
-  return list.length ? list.reduce((a, e) => a + exProgress(e), 0) / list.length : null;
+const activeGoals = s => s.goals.filter(g => g.status === 'active');
+function goalProgress(g) {
+  const L = goalDef(g.id), b = bestKey(g.id);
+  if (L.type === 'build') { // stepping stones: longest distance gets you to 80%, the finish time does the rest
+    const far = clamp01(longestIn(L.sport) / L.dist);
+    return b == null ? far * 0.8 : 0.8 + 0.2 * progress({ base: g.base, target: g.target, current: b });
+  }
+  return progress({ base: g.base, target: g.target, current: b ?? g.base });
+}
+const exProgress = goalProgress;
+function groupProgress(s, sports) {
+  const list = activeGoals(s).filter(g => sports.includes(goalDef(g.id).sport));
+  return list.length ? list.reduce((a, g) => a + goalProgress(g), 0) / list.length : null;
 }
 function stats(s) {
-  const p = k => progress(s.metrics[k]), d = s.depth === 'detailed';
-  const strEx = d ? exGroupProgress(s, ['strength', 'bodyweight']) : null;
-  const endEx = d ? exGroupProgress(s, ['cardio', 'cycling']) : null;
-  const eng = (p('hours') * 2 + p('sleep') + p('steps')) / 4;
-  return {
-    PWR: (p('ftp') + wkgProgress(s)) / 2,
-    END: endEx == null ? eng : (eng + endEx) / 2,
-    STR: strEx == null ? p('strength') : (p('strength') + strEx * 2) / 3,
-    BOD: p('weight'),
-    CON: clamp01(s.streak / 30),
-  };
+  const p = k => progress(s.metrics[k]), d = s.depth === 'detailed', g = sp => d ? groupProgress(s, sp) : null;
+  const cyc = g(['cycle']), end = g(['run', 'swim', 'row']), str = g(['strength', 'bodyweight']), pwr = (p('ftp') + wkgProgress(s)) / 2;
+  return { PWR: cyc == null ? pwr : (pwr + cyc) / 2, END: end ?? cyc ?? clamp01(s.streak / 30), STR: str ?? 0, BOD: p('weight'), CON: clamp01(s.streak / 30) };
 }
+// Overall = weight, W/kg, consistency and the average progress of your ACTIVE goals (parked goals are left out).
 function overall(s) {
-  let sum = 0, w = 0;
-  for (const m of Object.values(s.metrics)) { sum += progress(m) * m.weight; w += m.weight; }
-  sum += wkgProgress(s) * 2; w += 2;
-  sum += clamp01(s.streak / 30); w += 1;
-  if (s.depth === 'detailed' && s.exercises.length) {
-    sum += s.exercises.reduce((a, e) => a + exProgress(e), 0) / s.exercises.length * 3; w += 3;
-  }
+  let sum = progress(s.metrics.weight) * 2 + wkgProgress(s) * 2 + clamp01(s.streak / 30), w = 5;
+  const ag = s.depth === 'detailed' ? activeGoals(s) : [];
+  if (ag.length) { sum += ag.reduce((a, g) => a + goalProgress(g), 0) / ag.length * 5; w += 5; }
+  else { sum += progress(s.metrics.ftp) * 2; w += 2; }
   return Math.round(40 + 59 * (sum / w));
 }
 const statRating = v => Math.round(40 + 59 * v);
@@ -271,33 +321,58 @@ function setPersona(p) {
   checkBadges(); save();
 }
 
-/* ---------- 5) EXERCISES ---------- */
-const lib = id => LIBRARY.find(e => e.id === id) || { id, name: id, type: 'strength', kind: 'weight' };
-const e1rm = (reps, kg) => reps <= 1 ? kg : kg * (1 + reps / 30);
-function keyOf(kind, sets) {
-  const v = sets.map(st => kind === 'weight' ? e1rm(+st.reps, +st.kg) : kind === 'reps' ? +st.reps : kind === 'hold' ? +st.sec
-    : kind === 'power' ? +st.watts : +st.km).filter(Number.isFinite);
-  return v.length ? Math.round(Math.max(...v) * 10) / 10 : null;
+/* ---------- 5) GOALS, SESSIONS, BASELINES ---------- */
+function goalDef(id) {
+  return GOALS.find(g => g.id === id) || (id === 'session' ? { id, name: 'Training session', kind: 'session', sport: 'other', type: 'session' }
+    : { id, name: id, kind: 'reps', sport: 'bodyweight', type: 'test', base: 0, target: 1 });
 }
-function volumeOf(kind, sets) {
-  return Math.round(sets.reduce((a, st) => a + (kind === 'weight' ? st.reps * st.kg : kind === 'reps' ? +st.reps
-    : kind === 'hold' ? +st.sec : kind === 'power' ? st.watts * st.min * 60 / 1000 : +st.km), 0) * 10) / 10;
+const lib = goalDef;
+function e1rm(reps, kg) { return reps <= 1 ? kg : kg * (1 + reps / 30); }
+function keyOf(L, sets) {
+  const k = L.kind, v = sets.map(st => k === 'rm' ? e1rm(+st.reps, +st.kg) / (L.n === 5 ? 1 + 5 / 30 : 1) : k === 'reps' ? +st.reps : k === 'hold' ? +st.sec
+    : k === 'watts' ? +st.watts * (L.factor || 1) : k === 'far' ? +st.km : k === 'session' ? +st.min : +st.time).filter(Number.isFinite);
+  if (!v.length) return null;
+  return Math.round((KINDS[k].lower ? Math.min(...v) : Math.max(...v)) * 10) / 10;
 }
+function volumeOf(L, sets) { return L.kind === 'rm' ? sets.reduce((a, s) => a + s.reps * s.kg, 0) : L.kind === 'reps' ? sets.reduce((a, s) => a + +s.reps, 0) : null; }
+function isBetter(L, a, b) { return KINDS[L.kind].lower ? a < b : a > b; }
+function mkSession(id, date, sets, t) { const L = goalDef(id); return { id: uid(), t: t ?? Date.now(), exId: id, sport: L.sport, date, sets, key: keyOf(L, sets), vol: volumeOf(L, sets) }; }
+function markPBs(list) { const best = {}; for (const x of list.slice().sort((a, b) => a.date.localeCompare(b.date) || a.t - b.t)) { if (x.exId === 'session') continue; const L = goalDef(x.exId); x.pb = best[x.exId] != null && isBetter(L, x.key, best[x.exId]); if (best[x.exId] == null || isBetter(L, x.key, best[x.exId])) best[x.exId] = x.key; } }
 const sessionsFor = id => S.sessions.filter(x => x.exId === id).sort((a, b) => a.date.localeCompare(b.date) || a.t - b.t);
-function bestKey(id) { const ks = sessionsFor(id).map(x => x.key); return ks.length ? Math.max(...ks) : null; }
+function bestKey(id) { if (id === 'session') return null; const ks = sessionsFor(id).map(x => x.key).filter(k => k != null); if (!ks.length) return null; return KINDS[goalDef(id).kind].lower ? Math.min(...ks) : Math.max(...ks); }
 const fmtNum = n => (Math.round(n * 10) / 10).toLocaleString('en-US');
-function compare(prev, cur, kind) {
-  if (!prev) return [{ txt: 'First session logged, baseline set', cls: 'neu' }];
-  const out = [], u = KINDS[kind].unit;
-  const dk = cur.key - prev.key, dv = prev.vol ? (cur.vol - prev.vol) / prev.vol * 100 : 0;
-  out.push({ txt: `${KINDS[kind].keyLabel} ${dk >= 0 ? '+' : ''}${fmtNum(dk)} ${u}`, cls: dk > 0 ? 'up' : dk < 0 ? 'down' : 'neu' });
-  out.push({ txt: `${KINDS[kind].volLabel} ${dv >= 0 ? '+' : ''}${Math.round(dv)}%`, cls: dv > 0 ? 'up' : dv < 0 ? 'down' : 'neu' });
-  if (kind === 'weight') {
-    const top = a => Math.max(...a.sets.map(s => +s.kg)), d = top(cur) - top(prev);
-    if (d) out.push({ txt: `Top set ${d > 0 ? '+' : ''}${fmtNum(d)} kg`, cls: d > 0 ? 'up' : 'down' });
-  }
+function fmtTime(sec) { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`; }
+// "25:30" -> 1530 s, "1:02:03" -> 3723 s, a bare number is minutes ("25" -> 1500 s)
+function parseTime(v) { v = String(v).trim(); if (!v) return NaN; if (!v.includes(':')) return Math.round(parseFloat(v) * 60); return v.split(':').reduce((a, p) => a * 60 + (parseFloat(p) || 0), 0); }
+const isTimeKind = L => L.kind === 'time' || L.kind === 'build';
+const fmtVal = (L, v) => v == null ? '–' : isTimeKind(L) ? fmtTime(v) : `${fmtNum(v)} ${KINDS[L.kind].unit}`.trim();
+function sessionKm(x) { if (x.exId === 'session') return +(x.sets[0] || {}).km || 0; const L = goalDef(x.exId); return L.dist || (L.kind === 'far' ? x.key : 0); }
+const longestIn = sport => Math.max(0, ...S.sessions.filter(x => x.sport === sport).map(sessionKm));
+function compare(prev, cur, L) {
+  if (L.kind === 'session') return [{ txt: `${cur.sets[0].min} min${cur.sets[0].km ? ` · ${cur.sets[0].km} km` : ''} logged`, cls: 'neu' }];
+  if (!prev) return [{ txt: 'Baseline set 🎯', cls: 'up' }];
+  const d = cur.key - prev.key, good = isBetter(L, cur.key, prev.key), out = [];
+  out.push({ txt: `${isTimeKind(L) ? (d <= 0 ? '−' : '+') + fmtTime(Math.abs(d)) : (d >= 0 ? '+' : '') + fmtNum(d) + ' ' + KINDS[L.kind].unit} vs last`, cls: d === 0 ? 'neu' : good ? 'up' : 'down' });
+  if (cur.vol && prev.vol) { const dv = (cur.vol - prev.vol) / prev.vol * 100; out.push({ txt: `Volume ${dv >= 0 ? '+' : ''}${Math.round(dv)}%`, cls: dv > 0 ? 'up' : dv < 0 ? 'down' : 'neu' }); }
+  if (cur.pb) out.push({ txt: 'New PB!', cls: 'up' });
   return out;
 }
+// Baselines: a goal needs a baseline within 14 days of being picked or it is parked (kept, dimmed, out of the rating).
+function hasBaseline(g) {
+  const L = goalDef(g.id);
+  return S.sessions.filter(x => x.date >= g.since && (L.type === 'build' ? x.sport === L.sport : x.exId === g.id)).map(x => x.date).sort()[0] || null;
+}
+const daysLeft = g => BASELINE_DAYS - daysBetween(g.since, today());
+function updateBaselines() {
+  for (const g of S.goals) {
+    if (g.status !== 'active' || g.baselineDate) continue;
+    const d = hasBaseline(g);
+    if (d) { g.baselineDate = d; continue; }
+    if (daysLeft(g) <= 0) { g.status = 'parked'; g.parkedOn = today(); S.everParked = true; toast(`⏸️ ${goalDef(g.id).name} parked: no baseline in ${BASELINE_DAYS} days`); }
+  }
+}
+const pendingBaselines = () => S.goals.filter(g => g.status === 'active' && !g.baselineDate).sort((a, b) => daysLeft(a) - daysLeft(b));
+const baselineText = g => { const L = goalDef(g.id), d = daysLeft(g); return `${L.type === 'build' ? `Log any ${SPORTS[L.sport][1].toLowerCase()} session for your ${L.name} build-up` : `Set your ${L.name} baseline`} – ${d} day${d === 1 ? '' : 's'} left`; };
 
 /* ---------- 6) HABITS (earn-your-habits) ---------- */
 const habit = id => HABITS.find(h => h.id === id) || { id, label: (S.habits.wishlist.find(w => w.id === id) || {}).label || id, icon: '✨' };
@@ -383,22 +458,22 @@ function lineChart(pts, o = {}) {
   const pad = (hi - lo) * 0.12; lo -= pad; hi += pad;
   const t0 = new Date(pts[0].d).getTime(), t1 = new Date(pts.at(-1).d).getTime(), span = Math.max(1, t1 - t0);
   const X = p => pts.length === 1 ? (L + W - R) / 2 : L + (new Date(p.d).getTime() - t0) / span * (W - L - R);
-  const Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const Y = v => T + (o.invert ? (v - lo) / (hi - lo) : 1 - (v - lo) / (hi - lo)) * (H - T - B), fv = o.fmt || fmtNum, fa = o.fmt || fmtAx;
   const path = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p).toFixed(1)},${Y(p.y).toFixed(1)}`).join('');
   const area = `${path}L${X(pts.at(-1)).toFixed(1)},${H - B}L${X(pts[0]).toFixed(1)},${H - B}Z`;
-  const grid = [0, 1, 2, 3].map(i => { const v = lo + (hi - lo) * (i + 0.5) / 4; return `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="gl"/><text x="${L - 6}" y="${Y(v) + 3}" class="ax" text-anchor="end">${fmtAx(v)}</text>`; }).join('');
+  const grid = [0, 1, 2, 3].map(i => { const v = lo + (hi - lo) * (i + 0.5) / 4; return `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="gl"/><text x="${L - 6}" y="${Y(v) + 3}" class="ax" text-anchor="end">${fa(v)}</text>`; }).join('');
   const xl = [pts[0], pts[Math.floor(pts.length / 2)], pts.at(-1)].filter((p, i, a) => a.indexOf(p) === i)
     .map(p => `<text x="${X(p)}" y="${H - 6}" class="ax" text-anchor="middle">${fmtDate(p.d)}</text>`).join('');
   const bmax = Math.max(0, ...pts.map(p => p.bar || 0));
   const bars = bmax ? pts.map(p => { const h = (p.bar / bmax) * (H - T - B) * 0.35; return `<rect x="${X(p) - 3}" y="${H - B - h}" width="6" height="${h}" rx="2" class="vb"/>`; }).join('') : '';
-  const tgt = o.target != null ? `<line x1="${L}" x2="${W - R}" y1="${Y(o.target)}" y2="${Y(o.target)}" class="tg"/><text x="${W - R}" y="${Y(o.target) - 4}" class="tgl" text-anchor="end">TARGET ${fmtAx(o.target)}</text>` : '';
+  const tgt = o.target != null ? `<line x1="${L}" x2="${W - R}" y1="${Y(o.target)}" y2="${Y(o.target)}" class="tg"/><text x="${W - R}" y="${Y(o.target) - 4}" class="tgl" text-anchor="end">TARGET ${fa(o.target)}</text>` : '';
   const dots = pts.map((p, i) => `<circle cx="${X(p)}" cy="${Y(p.y)}" r="${p.pb ? 5.5 : i === pts.length - 1 ? 5 : 3}" class="${p.pb ? 'pbd' : 'dt'}" style="--c:${col}"
-    data-tip="${fmtDate(p.d)} · ${fmtNum(p.y)}${o.unit ? ' ' + o.unit : ''}${p.pb ? ' · PB' : ''}${p.bar ? ` · vol ${fmtNum(p.bar)}` : ''}"/>`).join('');
+    data-tip="${fmtDate(p.d)} · ${fv(p.y)}${o.unit ? ' ' + o.unit : ''}${p.pb ? ' · PB' : ''}${p.bar ? ` · vol ${fmtNum(p.bar)}` : ''}"/>`).join('');
   const last = pts.at(-1);
   return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${o.label || 'history chart'}">
     <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".45"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
     ${grid}${bars}${tgt}<path d="${area}" fill="url(#${gid})"/><path d="${path}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${dots}
-    <text x="${Math.min(X(last), W - R - 2)}" y="${Y(last.y) - 9}" class="lv" text-anchor="end">${fmtNum(last.y)}</text></svg><div class="tip"></div></div>`;
+    <text x="${Math.min(X(last), W - R - 2)}" y="${Y(last.y) - 9}" class="lv" text-anchor="end">${fv(last.y)}</text></svg><div class="tip"></div></div>`;
 }
 const fmtAx = v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + 'k' : Math.abs(v) >= 100 ? Math.round(v) : (Math.round(v * 10) / 10);
 document.addEventListener('click', e => {
@@ -409,13 +484,18 @@ document.addEventListener('click', e => {
 });
 const sinceRange = r => r === '4w' ? addDays(today(), -28) : r === '3m' ? addDays(today(), -91) : '0000';
 function exSeries(id, range) {
-  let best = -Infinity;
-  return sessionsFor(id).map(x => { const pb = x.key > best; best = Math.max(best, x.key); return { d: x.date, y: x.key, pb: pb && x !== sessionsFor(id)[0] ? true : false, bar: x.vol }; })
-    .filter(p => p.d >= sinceRange(range));
+  const L = goalDef(id);
+  if (L.type === 'build') { // longest distance in this sport so far, building toward the full distance
+    let best = 0;
+    return S.sessions.filter(x => x.sport === L.sport).sort((a, b) => a.date.localeCompare(b.date) || a.t - b.t)
+      .map(x => { best = Math.max(best, sessionKm(x)); return { d: x.date, y: +best.toFixed(2), pb: x.exId === id }; }).filter(p => p.d >= sinceRange(range));
+  }
+  return sessionsFor(id).map(x => ({ d: x.date, y: x.key, pb: !!x.pb, bar: x.vol || 0 })).filter(p => p.d >= sinceRange(range));
 }
 function sparkline(id) {
-  const p = sessionsFor(id).slice(-10).map(x => x.key); if (p.length < 2) return '';
-  const lo = Math.min(...p), hi = Math.max(...p) || 1, d = p.map((v, i) => `${i ? 'L' : 'M'}${(i / (p.length - 1) * 60).toFixed(1)},${(18 - (v - lo) / ((hi - lo) || 1) * 16).toFixed(1)}`).join('');
+  const L = goalDef(id), p = exSeries(id, 'all').slice(-10).map(x => x.y); if (p.length < 2) return '';
+  const inv = KINDS[L.kind].lower && L.type !== 'build', lo = Math.min(...p), hi = Math.max(...p);
+  const d = p.map((v, i) => { let t = (v - lo) / ((hi - lo) || 1); if (inv) t = 1 - t; return `${i ? 'L' : 'M'}${(i / (p.length - 1) * 60).toFixed(1)},${(18 - t * 16).toFixed(1)}`; }).join('');
   return `<svg class="spark" viewBox="0 0 60 20"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
 }
 
@@ -498,22 +578,36 @@ function depthPicker(sel, fn) {
   return Object.entries(DEPTHS).map(([k, p]) => `<button class="opt ${sel === k ? 'sel' : ''}" onclick="${fn}('${k}')"><span class="oi">${p.icon}</span><span><b>${p.name}</b><small>${p.desc}</small></span></button>`).join('');
 }
 function onboarding() {
-  const st = S.onboardStep, dots = `<div class="steps">${[0, 1, 2, 3].map(i => `<i class="${i <= st ? 'on' : ''}"></i>`).join('')}</div>`;
+  const st = S.onboardStep, N = 6, dots = `<div class="steps">${[...Array(N)].map((_, i) => `<i class="${i <= st ? 'on' : ''}"></i>`).join('')}</div>`;
+  const nav = (back, next, label = 'Next') => `<div class="row"><button class="ghost" onclick="S.onboardStep=${back};render()">Back</button><button onclick="${next}">${label}</button></div>`;
   if (st === 0) return `${dots}<div class="hero"><div class="hero-ic">🏁</div><h1>Welcome, ${esc(S.name)}</h1><p class="muted">Pick how hard the game plays. You can drop down any time; moving up earns a badge.</p></div>
     ${S._migratedFromV1 ? '<div class="panel note">Your v1 data (XP, streak, badges, history) has been carried over.</div>' : ''}${modePicker(S.persona, 'obPersona')}`;
   if (st === 1) return `${dots}<h2>How much do you want to track?</h2><p class="muted">Switch any time in More › Settings.</p>${depthPicker(S.depth, 'obDepth')}
     <button class="ghost wide" onclick="S.onboardStep=0;render()">Back</button>`;
-  if (st === 2) { const m = S.metrics, f = (k, f2, step) => `<div><label>${f2 === 'current' ? 'Now' : 'Target'}</label><input type="number" inputmode="decimal" step="${step}" value="${m[k][f2]}" onchange="obMetric('${k}','${f2}',this.value)"></div>`;
+  if (st === 2) return `${dots}<h2>Your sports</h2><p class="muted">Pick everything you train. You can change this later in Settings.</p>${sportPicker()}
+    ${nav(1, "S.onboardStep=3;save();render();scrollTo(0,0)")}`;
+  if (st === 3) return `${dots}<h2>Your goals</h2><p class="muted">Pick specific benchmarks. Targets are scaled for ${PERSONAS[S.persona].name} mode; edit any of them.</p>
+    ${goalPicker()}${nav(2, "S.onboardStep=4;save();render();scrollTo(0,0)")}`;
+  if (st === 4) { const m = S.metrics, f = (k, f2, step) => `<div><label>${f2 === 'current' ? 'Now' : 'Target'}</label><input type="number" inputmode="decimal" step="${step}" value="${m[k][f2]}" onchange="obMetric('${k}','${f2}',this.value)"></div>`;
     return `${dots}<h2>Your starting line</h2><p class="muted">Seeded from your TrainingPeaks baseline. Edit if anything has changed.</p>
     <div class="panel"><b>⚖️ Weight (kg)</b><div class="grid2">${f('weight', 'current', 0.1)}${f('weight', 'target', 0.1)}</div></div>
     <div class="panel"><b>🚴 FTP (W)</b><div class="grid2">${f('ftp', 'current', 1)}${f('ftp', 'target', 1)}</div></div>
-    ${S.depth === 'detailed' ? `<div class="panel"><b>🏋️ Your 10 suggested exercises</b><p class="muted">Targets are scaled for ${PERSONAS[S.persona].name} mode and re-anchored to your first log. Change them in Train.</p>
-      <div class="chips">${S.exercises.map(e => `<span class="chip">${lib(e.id).name}</span>`).join('')}</div></div>` : ''}
-    <div class="row"><button class="ghost" onclick="S.onboardStep=1;render()">Back</button><button onclick="S.onboardStep=3;save();render()">Next</button></div>`; }
+    <div class="panel note">🎯 <b>Baseline window:</b> each goal needs a first attempt within ${BASELINE_DAYS} days or it gets parked. Build-up goals (marathon, long swims, 100 km) just need any session in that sport. Set them all in time for the 🎯 badge.</div>
+    ${nav(3, "S.onboardStep=5;save();render()")}`; }
   return `${dots}<h2>Earn your habits</h2><div class="panel"><p>You start with <b>${S.habits.slots}</b> habits:</p>
     ${S.habits.active.map(id => `<div class="hb static"><span>${habit(id).icon}</span>${habit(id).label}</div>`).join('')}
     <p class="muted">Hit them on 6 of 7 days and you unlock a new habit slot. Ideas go on a wishlist until then. Two weak weeks in a row pauses your newest habit instead of failing everything.</p></div>
-    <div class="row"><button class="ghost" onclick="S.onboardStep=2;render()">Back</button><button onclick="obFinish()">Let's go ${PERSONAS[S.persona].icon}</button></div>`;
+    ${nav(4, 'obFinish()', `Let's go ${PERSONAS[S.persona].icon}`)}`;
+}
+function sportPicker() {
+  return `<div class="sports">${Object.entries(SPORTS).map(([k, [ic, n]]) => `<button class="${S.sports.includes(k) ? 'on' : ''}" onclick="toggleSport('${k}')"><span>${ic}</span>${n}<i>${S.sports.includes(k) ? '✓' : ''}</i></button>`).join('')}</div>`;
+}
+function goalPicker() {
+  const mine = id => S.goals.find(g => g.id === id);
+  return S.sports.map(sp => { const list = GOALS.filter(g => g.sport === sp);
+    return `<h3>${sportName(sp)}</h3><div class="chips">${list.map(L => `<button class="chip btn ${mine(L.id) ? 'on' : ''}" onclick="toggleGoal('${L.id}')">${mine(L.id) ? '✓ ' : ''}${L.name}${L.type === 'build' ? ' <em>build-up</em>' : ''}</button>`).join('')}</div>
+      ${S.goals.filter(g => goalDef(g.id).sport === sp).map(g => { const L = goalDef(g.id);
+        return `<div class="gtgt"><span>${L.name}</span><label>Target <input ${isTimeKind(L) ? 'type="text" inputmode="text" placeholder="mm:ss"' : 'type="number" step="any"'} value="${isTimeKind(L) ? fmtTime(g.target) : g.target}" onchange="setGoalTarget('${g.id}',this.value)"> ${isTimeKind(L) ? '' : KINDS[L.kind].unit}</label></div>`; }).join('')}`; }).join('') || '<p class="muted">Pick at least one sport first.</p>';
 }
 
 const bar = (lbl, v, note, cls = '') => `<div class="metricrow ${cls}"><div class="lbl">${lbl}<small>${note}</small></div>
@@ -529,17 +623,18 @@ function athleteCard() {
 
 const VIEWS = {
   card() {
-    const ex = S.depth === 'detailed' ? S.exercises : [], li = levelInfo(S.xp);
-    const nextPB = ex.map(e => ({ e, p: exProgress(e) })).filter(x => x.p < 1).sort((a, b) => b.p - a.p)[0];
+    const ex = S.depth === 'detailed' ? activeGoals(S) : [];
+    const next = ex.map(g => ({ g, p: goalProgress(g) })).filter(x => x.p < 1).sort((a, b) => b.p - a.p)[0];
     return `${athleteCard()}
       <div class="tiles"><div class="tile"><b>${S.streak}</b><small>day streak 🔥</small></div><div class="tile"><b>${S.challenge.day}<em>/${IRON[S.persona].days}</em></b><small>Iron days</small></div>
         <div class="tile"><b>${S.pbCount}</b><small>PBs 🏆</small></div></div>
-      <div class="row"><button onclick="go('today')">Today's check-in</button><button class="ghost" onclick="go('more',{more:'share'})">Share card ↗</button></div>
-      ${nextPB ? `<div class="panel callout" onclick="go('train',{ex:'${nextPB.e.id}'})"><small>CLOSEST TO TARGET</small><b>${lib(nextPB.e.id).name}</b> is ${Math.round(nextPB.p * 100)}% of the way. Tap to log.</div>` : ''}
+      <div class="row"><button onclick="startLog()">Log workout</button><button class="ghost" onclick="go('more',{more:'share'})">Share card ↗</button></div>
+      ${next ? `<div class="panel callout" onclick="go('train',{ex:'${next.g.id}'})"><small>CLOSEST TO TARGET</small><b>${goalDef(next.g.id).name}</b> is ${Math.round(next.p * 100)}% of the way.</div>` : ''}
       <div class="panel"><h3>Body & engine</h3>
-      ${Object.values(S.metrics).map(m => bar(m.label, progress(m), `${m.current} → ${m.target}`)).join('')}
+      ${['weight', 'ftp'].map(k => { const m = S.metrics[k]; return bar(m.label, progress(m), `${m.current} → ${m.target}`); }).join('')}
       ${bar('W/kg', wkgProgress(S), `${wkg(S).toFixed(2)} → ${(S.metrics.ftp.target / S.metrics.weight.target).toFixed(2)}`)}</div>
-      ${ex.length ? `<div class="panel"><h3>Exercise targets <small>roll up into your rating</small></h3>${ex.map(e => bar(lib(e.id).name, exProgress(e), `${fmtNum(bestKey(e.id) ?? e.base)} → ${fmtNum(e.target)} ${KINDS[lib(e.id).kind].unit}`, 'tap" onclick="go(\'train\',{ex:\'' + e.id + '\'})')).join('')}</div>` : ''}`;
+      ${ex.length ? `<div class="panel"><h3>Goals <small>roll up into your rating</small></h3>${ex.map(g => { const L = goalDef(g.id);
+        return bar(L.name, goalProgress(g), L.type === 'build' && bestKey(g.id) == null ? `longest ${fmtNum(longestIn(L.sport))} / ${L.dist} km` : `${fmtVal(L, bestKey(g.id) ?? g.base)} → ${fmtVal(L, g.target)}`, 'tap" onclick="go(\'train\',{ex:\'' + g.id + '\'})'); }).join('')}</div>` : ''}`;
   },
 
   today() {
@@ -561,18 +656,25 @@ const VIEWS = {
         <div class="row"><input id="wish" placeholder="e.g. Apple cider vinegar, multivitamin"><button onclick="addWish()">Add</button></div>
         ${H.slots < HABITS.length ? `<button class="link" onclick="overrideHabits()">Unlock everything now (forfeits the Earned It badge)</button>` : ''}</div>
       ${S.depth === 'detailed' ? `<div class="panel"><h3>Numbers check-in</h3>${done ? '<p class="muted">✅ Logged today. Update any number without extra XP.</p>' : ''}
-        <div class="grid2">${f('weight', 0.1)}${f('ftp', 1)}${f('sleep', 0.5)}${f('steps', 100)}${f('hours', 0.5)}${f('strength', 1)}</div>
-        <label class="check"><input type="checkbox" id="in-workout"> I trained today</label>
+        <div class="grid2">${f('weight', 0.1)}${f('ftp', 1)}</div><p class="muted">Workouts are logged from Home › Log workout.</p>
         <button class="wide" onclick="doCheckin()">Log it 💪</button></div>` : ''}`;
   },
 
   train() {
-    if (R.ex) return exerciseView(R.ex);
-    const groups = Object.keys(TYPES).map(t => [t, S.exercises.filter(e => lib(e.id).type === t)]).filter(g => g[1].length);
-    return `<div class="ph"><h2>Train</h2><button class="sm" onclick="openLibrary()">+ Add</button></div>
-      ${groups.map(([t, list]) => `<h3>${TYPES[t]}</h3>${list.map(e => { const L = lib(e.id), b = bestKey(e.id), last = sessionsFor(e.id).at(-1), p = exProgress(e);
-        return `<button class="exrow" onclick="go('train',{ex:'${e.id}'})"><div class="exm"><b>${L.name}</b><small>${last ? `Last ${fmtDate(last.date)} · ` : ''}${b != null ? `Best ${fmtNum(b)}` : `Start ${fmtNum(e.base)}`} → ${fmtNum(e.target)} ${KINDS[L.kind].unit}</small>
-          <div class="bar"><i style="width:${p * 100}%"></i></div></div>${sparkline(e.id)}<span class="pct">${Math.round(p * 100)}%</span></button>`; }).join('')}`).join('')}`;
+    if (R.ex) return goalView(R.ex);
+    const act = activeGoals(S), parked = S.goals.filter(g => g.status === 'parked');
+    const row = g => { const L = goalDef(g.id), b = bestKey(g.id), last = sessionsFor(g.id).at(-1), p = goalProgress(g), pend = g.status === 'active' && !g.baselineDate;
+      return `<button class="exrow ${g.status}" onclick="go('train',{ex:'${g.id}'})"><div class="exm"><b>${L.name}${L.type === 'build' ? ' <em class="tag">build-up</em>' : ''}</b>
+        <small>${pend ? `🎯 ${daysLeft(g)}d left for a baseline` : g.status === 'parked' ? 'Parked · tap to re-activate' : `${last ? `Last ${fmtDate(last.date)} · ` : ''}${L.type === 'build' && b == null ? `Longest ${fmtNum(longestIn(L.sport))} of ${L.dist} km` : `PB ${fmtVal(L, b)} → ${fmtVal(L, g.target)}`}`}</small>
+        <div class="bar"><i style="width:${p * 100}%"></i></div></div>${sparkline(g.id)}<span class="pct">${Math.round(p * 100)}%</span></button>`; };
+    const sports = [...new Set(act.map(g => goalDef(g.id).sport))];
+    return `<div class="ph"><h2>Goals</h2><button class="sm" onclick="go('goals')">+ Edit goals</button></div>
+      ${sports.map(sp => `<h3>${sportName(sp)}</h3>${act.filter(g => goalDef(g.id).sport === sp).map(row).join('')}`).join('') || '<p class="muted">No active goals. Add some.</p>'}
+      ${parked.length ? `<h3>⏸️ Parked <small>no baseline in ${BASELINE_DAYS} days · not in your rating</small></h3>${parked.map(g => `<div class="parkrow">${row(g)}<button class="sm ghost" onclick="reactivateGoal('${g.id}')">Re-activate</button></div>`).join('')}` : ''}`;
+  },
+  goals() {
+    return `<button class="back" onclick="go('train')">‹ Goals</button><h2>Sports & goals</h2><p class="muted">New goals get a ${BASELINE_DAYS}-day baseline window.</p>
+      ${sportPicker()}${goalPicker()}<button class="wide" onclick="go('train')">Done</button>`;
   },
 
   challenge() {
@@ -615,101 +717,119 @@ const VIEWS = {
 
 /* ---------- 10b) HOME + POST-WORKOUT FLOW ---------- */
 let F = null; // flow state while logging
-const QUICK = [['ride', '🚴', 'Ride', 'cycling'], ['run', '🏃', 'Run', 'run'], ['swim', '🏊', 'Swim', 'swim'], ['strength', '🏋️', 'Strength', 'strength'], ['bodyweight', '🤸', 'Bodyweight', 'bodyweight']];
-const quickMatch = (q, id) => { const L = lib(id); return q === 'ride' ? L.type === 'cycling' : q === 'run' ? id === 'run' : q === 'swim' ? id === 'swim' : L.type === q; };
-function recentIds(n = 4) { const seen = []; for (const x of S.sessions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.t - a.t)) if (!seen.includes(x.exId)) seen.push(x.exId); return seen.slice(0, n); }
-function suggestedIds(n = 3) {
+function recentIds(n = 4) { const seen = []; for (const x of S.sessions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.t - a.t)) if (x.exId !== 'session' && !seen.includes(x.exId) && S.goals.some(g => g.id === x.exId && g.status === 'active')) seen.push(x.exId); return seen.slice(0, n); }
+function suggestedIds(n = 4) {
   const lastDate = id => sessionsFor(id).at(-1)?.date || '0000';
-  const recentTypes = new Set(S.sessions.filter(x => x.date >= addDays(today(), -1)).map(x => lib(x.exId).type));
-  const ids = S.exercises.map(e => e.id).filter(id => !recentTypes.has(lib(id).type)).sort((a, b) => lastDate(a).localeCompare(lastDate(b)));
-  const out = [], types = new Set(); // one per type first, so suggestions cover strength and endurance
-  for (const id of ids) if (!types.has(lib(id).type)) { types.add(lib(id).type); out.push(id); }
+  const recentSports = new Set(S.sessions.filter(x => x.date >= addDays(today(), -1)).map(x => x.sport));
+  const ids = activeGoals(S).map(g => g.id).filter(id => !recentSports.has(goalDef(id).sport)).sort((a, b) => lastDate(a).localeCompare(lastDate(b)));
+  const out = [], sp = new Set();
+  for (const id of ids) if (!sp.has(goalDef(id).sport)) { sp.add(goalDef(id).sport); out.push(id); }
   for (const id of ids) if (!out.includes(id)) out.push(id);
   return out.slice(0, n);
 }
 function seedSets(id) {
+  if (id === 'session') return [{ min: 60 }];
   const last = sessionsFor(id).at(-1); if (last) return structuredClone(last.sets);
-  const L = lib(id), b = (S.exercises.find(e => e.id === id) || L).base;
-  return L.kind === 'weight' ? [1, 2, 3].map(() => ({ reps: 5, kg: Math.round(b / 1.17 / 2.5) * 2.5 })) : L.kind === 'reps' ? [{ reps: Math.round(b) }, { reps: Math.round(b * 0.8) }]
-    : L.kind === 'hold' ? [{ sec: b }] : L.kind === 'power' ? [{ min: 20, watts: b }] : L.kind === 'endurance' ? [{ min: 90, km: b, watts: 180 }] : [{ km: b, min: Math.round(b * (id === 'swim' ? 22 : 6)) }];
+  const L = goalDef(id), g = S.goals.find(x => x.id === id) || L, b = g.base;
+  return L.kind === 'rm' ? [{ reps: L.n, kg: b }] : L.kind === 'reps' ? [{ reps: Math.round(b) }] : L.kind === 'hold' ? [{ sec: b }]
+    : L.kind === 'watts' ? [{ watts: Math.round(b / (L.factor || 1)) }] : L.kind === 'far' ? [{ km: b }] : [{ time: b }];
 }
 VIEWS.home = () => {
   const H = S.habits, rec = H.days[today()] || { done: [] }, hDone = rec.done.filter(d => H.active.includes(d)).length;
   const todays = S.sessions.filter(x => x.date === today()), last = S.sessions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.t - a.t)[0];
-  const iron = S.challenge.lastDate === today(), r = overall(S), hr = new Date().getHours();
+  const iron = S.challenge.lastDate === today(), r = overall(S), hr = new Date().getHours(), pend = S.depth === 'detailed' ? pendingBaselines() : [];
   return `<div class="hello"><small>${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}, ${esc(S.name)}</small><b>${todays.length ? 'Nice work today 💪' : 'Just trained? Log it.'}</b></div>
-    ${!S.hintSeen ? `<div class="panel hint"><b>👋 How to use Fit Quest</b><ol><li>Finish a workout, open the app.</li><li>Tap <b>Log workout</b>: pick what you did, nudge the numbers, tick your habits.</li><li>Collect XP, PBs and unlocks. Share if you like.</li></ol><button class="sm" onclick="S.hintSeen=true;save();render()">Got it</button></div>` : ''}
+    ${!S.hintSeen ? `<div class="panel hint"><b>👋 How to use Fit Quest</b><ol><li>Finish a workout, open the app.</li><li>Tap <b>Log workout</b>: pick the goal you attempted (or a general session), nudge the numbers, tick your habits.</li><li>Collect XP, PBs and unlocks. Share if you like.</li></ol><button class="sm" onclick="S.hintSeen=true;save();render()">Got it</button></div>` : ''}
     <button class="cta" onclick="startLog()"><span>＋</span>Log workout<small>${todays.length ? `${todays.length} logged today · add more` : 'About 30 seconds'}</small></button>
     <div class="tiles"><div class="tile hot"><b>${S.streak}</b><small>day streak 🔥</small></div><div class="tile" onclick="go('card')"><b>${r}</b><small>${tier(r)} rating</small></div><div class="tile" onclick="go('challenge')"><b>${S.challenge.day}<em>/${IRON[S.persona].days}</em></b><small>Iron days</small></div></div>
+    ${pend.length ? `<div class="panel baseline"><div class="ph"><h3>🎯 Baseline week</h3><small class="muted">${S.goals.filter(g => g.baselineDate).length}/${S.goals.filter(g => g.status === 'active').length} set</small></div>
+      ${pend.map(g => `<button class="bl ${daysLeft(g) <= 3 ? 'urgent' : ''}" onclick="startLog('${goalDef(g.id).type === 'build' ? 'session:' + goalDef(g.id).sport : g.id}')"><span>${SPORTS[goalDef(g.id).sport][0]}</span><b>${baselineText(g)}</b><i>${daysLeft(g) <= 3 ? '⚠️' : '›'}</i></button>`).join('')}
+      <p class="muted">No baseline in ${BASELINE_DAYS} days parks the goal (kept, but out of your rating). All in time earns 🎯.</p></div>` : ''}
     <div class="panel"><h3>Today</h3>
-      <button class="status ${todays.length ? 'ok' : ''}" onclick="startLog()"><i>${todays.length ? '✓' : ''}</i>Workout<span>${todays.length ? todays.map(x => lib(x.exId).name).join(', ') : 'Not logged yet'}</span></button>
+      <button class="status ${todays.length ? 'ok' : ''}" onclick="startLog()"><i>${todays.length ? '✓' : ''}</i>Workout<span>${todays.length ? todays.map(x => x.exId === 'session' ? sportName(x.sport).split(' ')[1] + ' session' : goalDef(x.exId).name).join(', ') : 'Not logged yet'}</span></button>
       <button class="status ${hDone >= H.active.length ? 'ok' : ''}" onclick="go('today')"><i>${hDone >= H.active.length ? '✓' : ''}</i>Habits<span>${hDone}/${H.active.length} done</span></button>
       <button class="status ${iron ? 'ok' : ''}" onclick="go('challenge')"><i>${iron ? '✓' : ''}</i>Iron ${IRON[S.persona].days}<span>${iron ? 'Day banked' : `Bank day ${S.challenge.day + 1}`}</span></button></div>
-    ${last ? `<div class="panel callout" onclick="go('train',{ex:'${last.exId}'})"><small>LAST SESSION · ${fmtDate(last.date)}</small><b>${lib(last.exId).name}</b> ${last.sets.map(x => setText(lib(last.exId).kind, x)).join(' · ')} ${last.pb ? '🏆' : ''}</div>` : ''}`;
+    ${last ? `<div class="panel callout" onclick="${last.exId === 'session' ? '' : `go('train',{ex:'${last.exId}'})`}"><small>LAST SESSION · ${fmtDate(last.date)}</small><b>${last.exId === 'session' ? sportName(last.sport) + ' session' : goalDef(last.exId).name}</b> ${last.sets.map(x => setText(goalDef(last.exId), x)).join(' · ')} ${last.pb ? '🏆' : ''}</div>` : ''}`;
 };
-window.startLog = () => { F = { step: 1, q: null, sel: [], sets: {}, startXP: S.xp, startBadges: [...S.badges], startSlots: S.habits.slots, startLevel: levelInfo(S.xp).level, startWeight: S.metrics.weight.current }; go('log'); };
+// pre: optional goal id, or 'session:<sport>' to open a general session
+window.startLog = pre => {
+  F = { step: 1, q: null, sel: [], sets: {}, sport: S.sports[0] || 'run', startXP: S.xp, startBadges: [...S.badges], startSlots: S.habits.slots, startLevel: levelInfo(S.xp).level, startWeight: S.metrics.weight.current };
+  if (pre?.startsWith('session:')) { F.sel = ['session']; F.sport = pre.slice(8); F.q = F.sport; } else if (pre) { F.sel = [pre]; F.q = goalDef(pre).sport; }
+  go('log');
+};
 const stepDots = () => `<div class="steps">${[1, 2, 3].map(i => `<i class="${i <= F.step ? 'on' : ''}"></i>`).join('')}</div>`;
+const pickTile = id => { if (id === 'session') return `<button class="pick gen ${F.sel.includes(id) ? 'on' : ''}" onclick="togglePick('session')"><b>⏱️ Training session</b><small>Any workout. Just duration${F.q ? ` · ${SPORTS[F.q][1]}` : ''}. No PB.</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`;
+  const L = goalDef(id), g = S.goals.find(x => x.id === id), last = sessionsFor(id).at(-1), pend = g && g.status === 'active' && !g.baselineDate;
+  return `<button class="pick ${F.sel.includes(id) ? 'on' : ''} ${pend ? 'need' : ''}" onclick="togglePick('${id}')"><b>${L.name}</b><small>${pend ? `🎯 baseline · ${daysLeft(g)}d left` : last ? `${fmtDate(last.date)} · ${fmtVal(L, last.key)}` : sportName(L.sport)}</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`; };
 VIEWS.log = () => {
   if (!F) { R.tab = 'home'; return VIEWS.home(); }
   if (F.step === 1) {
-    const tile = id => { const L = lib(id), last = sessionsFor(id).at(-1); return `<button class="pick ${F.sel.includes(id) ? 'on' : ''}" onclick="togglePick('${id}')"><b>${L.name}</b><small>${last ? `${fmtDate(last.date)} · ${last.sets.length > 1 ? last.sets.length + ' sets' : setText(L.kind, last.sets[0])}` : TYPES[L.type]}</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`; };
-    const rec = recentIds(), sug = suggestedIds(4).filter(id => !rec.includes(id)), rest = S.exercises.map(e => e.id).filter(id => !rec.includes(id) && !sug.includes(id));
-    const pool = F.q ? [...new Set([...S.exercises.map(e => e.id), ...LIBRARY.map(e => e.id)])].filter(id => quickMatch(F.q, id)) : [];
+    const act = activeGoals(S).map(g => g.id), rec = recentIds(), need = pendingBaselines().filter(g => goalDef(g.id).type !== 'build').map(g => g.id).filter(id => !rec.includes(id));
+    const sug = suggestedIds().filter(id => !rec.includes(id) && !need.includes(id)), rest = act.filter(id => !rec.includes(id) && !sug.includes(id) && !need.includes(id));
+    const pool = F.q ? act.filter(id => goalDef(id).sport === F.q) : [];
     return `${stepDots()}<div class="ph"><h2>What did you do?</h2><button class="x" onclick="F=null;go('home')">✕</button></div>
-      <div class="quick">${QUICK.map(([k, ic, l]) => `<button class="${F.q === k ? 'on' : ''}" onclick="quickPick('${k}')"><span>${ic}</span>${l}</button>`).join('')}</div>
-      ${F.q ? `<h3>${QUICK.find(x => x[0] === F.q)[2]}</h3><div class="picks">${pool.map(tile).join('')}</div>` : ''}
-      ${rec.length ? `<h3>Recent</h3><div class="picks">${rec.map(tile).join('')}</div>` : ''}
-      ${sug.length ? `<h3>Suggested today <small>not done lately</small></h3><div class="picks">${sug.map(tile).join('')}</div>` : ''}
-      ${rest.length ? `<details class="more" ${F.sel.some(id => rest.includes(id)) ? 'open' : ''}><summary>All my exercises (${rest.length})</summary><div class="picks">${rest.map(tile).join('')}</div></details>` : ''}
-      <div class="dock"><button class="wide" ${F.sel.length ? '' : 'disabled'} onclick="F.step=2;render();scrollTo(0,0)">${F.sel.length ? `Next: enter numbers (${F.sel.length})` : 'Pick at least one'}</button></div>`;
+      <div class="quick">${S.sports.map(k => `<button class="${F.q === k ? 'on' : ''}" onclick="quickPick('${k}')"><span>${SPORTS[k][0]}</span>${SPORTS[k][1]}</button>`).join('')}</div>
+      <div class="picks one">${pickTile('session')}</div>
+      ${F.q ? `<h3>${sportName(F.q)} goals</h3><div class="picks">${pool.map(pickTile).join('') || '<span class="muted">No goals for this sport yet. Log a session, or add goals in Train.</span>'}</div>` : ''}
+      ${need.length && !F.q ? `<h3>🎯 Needs a baseline</h3><div class="picks">${need.map(pickTile).join('')}</div>` : ''}
+      ${rec.length && !F.q ? `<h3>Recent</h3><div class="picks">${rec.map(pickTile).join('')}</div>` : ''}
+      ${sug.length && !F.q ? `<h3>Suggested today <small>not attempted lately</small></h3><div class="picks">${sug.map(pickTile).join('')}</div>` : ''}
+      ${rest.length && !F.q ? `<details class="more" ${F.sel.some(id => rest.includes(id)) ? 'open' : ''}><summary>All my goals (${rest.length})</summary><div class="picks">${rest.map(pickTile).join('')}</div></details>` : ''}
+      <div class="dock"><button class="wide" ${F.sel.length ? '' : 'disabled'} onclick="F.step=2;render();scrollTo(0,0)">${F.sel.length ? `Next: enter results (${F.sel.length})` : 'Pick a goal or a session'}</button></div>`;
   }
   if (F.step === 2) {
-    return `${stepDots()}<div class="ph"><h2>Your numbers</h2><button class="x" onclick="F.step=1;render()">‹ Back</button></div><p class="muted">Prefilled from last time. Tap − / + to adjust.</p>
-      ${F.sel.map(id => { const L = lib(id), last = sessionsFor(id).at(-1), sets = F.sets[id] || (F.sets[id] = seedSets(id));
-        return `<div class="panel" id="fx-${id}"><div class="ph"><b class="en">${L.name}</b><small class="muted">${last ? 'Last ' + fmtDate(last.date) : 'First time'}</small></div>
-          ${sets.map((st, i) => `<div class="srow"><span class="sn">${sets.length > 1 ? i + 1 : ''}</span>${KINDS[L.kind].fields.map(([f, lbl, step]) => `<div class="stp"><button onclick="bump('${id}',${i},'${f}',-${step})">−</button><label><input type="number" inputmode="decimal" value="${st[f] ?? ''}" placeholder="–" onchange="setF('${id}',${i},'${f}',this.value)"><small>${lbl}</small></label><button onclick="bump('${id}',${i},'${f}',${step})">+</button></div>`).join('')}
+    return `${stepDots()}<div class="ph"><h2>Your results</h2><button class="x" onclick="F.step=1;render()">‹ Back</button></div><p class="muted">Prefilled from last time. Tap − / + to adjust. Times are mm:ss.</p>
+      ${F.sel.map(id => { const L = goalDef(id), last = sessionsFor(id).at(-1), sets = F.sets[id] || (F.sets[id] = seedSets(id)), multi = L.kind === 'rm';
+        const head = id === 'session' ? `<b class="en">⏱️ Training session</b></div><div class="chips">${S.sports.map(k => `<button class="chip btn ${F.sport === k ? 'on' : ''}" onclick="F.sport='${k}';render()">${SPORTS[k][0]} ${SPORTS[k][1]}</button>`).join('')}</div><div>`
+          : `<b class="en">${L.name}</b><small class="muted">${last ? 'Last ' + fmtVal(L, last.key) : 'Baseline attempt'}${bestKey(id) != null ? ` · PB ${fmtVal(L, bestKey(id))}` : ''}</small>`;
+        return `<div class="panel" id="fx-${id}"><div class="ph">${head}</div>
+          ${sets.map((st, i) => `<div class="srow"><span class="sn">${sets.length > 1 ? i + 1 : ''}</span>${KINDS[L.kind].fields.map(([f, lbl, step, opt, typ]) => `<div class="stp"><button onclick="bump('${id}',${i},'${f}',-${step})">−</button><label><input ${typ === 'time' ? 'type="text" placeholder="mm:ss"' : 'type="number" inputmode="decimal" placeholder="–"'} value="${st[f] == null ? '' : typ === 'time' ? fmtTime(st[f]) : st[f]}" onchange="setF('${id}',${i},'${f}',this.value,'${typ || ''}')"><small>${lbl}${opt ? ' (opt.)' : ''}</small></label><button onclick="bump('${id}',${i},'${f}',${step})">+</button></div>`).join('')}
           ${sets.length > 1 ? `<button class="x" onclick="F.sets['${id}'].splice(${i},1);render()">✕</button>` : ''}</div>`).join('')}
-          <button class="link" onclick="F.sets['${id}'].push(structuredClone(F.sets['${id}'].at(-1)));render()">+ add set</button></div>`; }).join('')}
+          ${multi ? `<button class="link" onclick="F.sets['${id}'].push(structuredClone(F.sets['${id}'].at(-1)));render()">+ add set</button>` : ''}${L.dist ? `<small class="muted">${L.type === 'build' ? 'Finished the full ' : ''}${L.dist} km${L.type === 'build' ? '? Enter your finish time. Shorter build-up runs go in a Training session.' : ''}</small>` : ''}</div>`; }).join('')}
       <div class="dock"><button class="wide" onclick="toStep3()">Next: habits</button></div>`;
   }
   if (F.step === 3) {
-    const H = S.habits, rec = H.days[today()] || { done: [] }, w = S.metrics.weight.current;
+    const H = S.habits, rec = H.days[today()] || { done: [] }, w = S.metrics.weight.current, list = H.active.filter(id => id !== 'trained');
     return `${stepDots()}<div class="ph"><h2>Today's habits</h2><button class="x" onclick="F.step=2;render()">‹ Back</button></div>
-      <div class="panel">${H.active.map(id => { const on = rec.done.includes(id); return `<button class="hb ${on ? 'on' : ''}" onclick="tickHabit('${id}')"><span>${habit(id).icon}</span>${esc(habit(id).label)}<i>${on ? '✓' : ''}</i></button>`; }).join('')}
+      <div class="panel">${H.active.includes('trained') ? '<div class="implied">✅ <b>Trained today</b> counted from this log</div>' : ''}
+      ${list.map(id => { const on = rec.done.includes(id); return `<button class="hb ${on ? 'on' : ''}" onclick="tickHabit('${id}')"><span>${habit(id).icon}</span>${esc(habit(id).label)}<i>${on ? '✓' : ''}</i></button>`; }).join('')}
       <p class="muted">Tick what's true so far. You can come back later today.</p></div>
       ${S.depth === 'detailed' ? `<div class="panel"><b>⚖️ Weigh-in</b> <small class="muted">optional</small><div class="stp big"><button onclick="F.w=+((F.w??${w})-0.1).toFixed(1);render()">−</button><label><input type="number" step="0.1" value="${F.w ?? w}" onchange="F.w=parseFloat(this.value)"><small>kg</small></label><button onclick="F.w=+((F.w??${w})+0.1).toFixed(1);render()">+</button></div></div>` : ''}
       <div class="dock"><button class="wide" onclick="finishLog()">Finish & collect XP 🎉</button></div>`;
   }
-  // step 4: reward
   const gained = S.xp - F.startXP, li = levelInfo(S.xp), newB = S.badges.filter(b => !F.startBadges.includes(b));
   return `<div class="reward"><div class="burst sm"></div><small>WORKOUT LOGGED</small><div class="xpbig">+${gained}<span>XP</span></div>
       ${li.level > F.startLevel ? `<div class="lvup">LEVEL UP · LV ${li.level}</div>` : `<div class="muted">Level ${li.level} · ${li.toNext} XP to go</div>`}
       <div class="xpbar"><i style="width:${li.pct}%"></i></div></div>
     <div class="tiles"><div class="tile hot"><b>${S.streak}</b><small>day streak 🔥</small></div><div class="tile"><b>${F.res.filter(x => x.cur.pb).length}</b><small>PBs today</small></div><div class="tile"><b>${overall(S)}</b><small>rating</small></div></div>
-    ${F.res.map(({ cur, prev }) => { const L = lib(cur.exId); return `<div class="panel ${cur.pb ? 'pbrow' : ''}"><div class="ph"><b>${cur.pb ? '🏆 ' : ''}${L.name}</b>${cur.pb ? '<span class="pbtag">PB!</span>' : ''}</div><div class="cmp">${compare(prev, cur, L.kind).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div></div>`; }).join('')}
+    ${F.res.map(({ cur, prev }) => { const L = goalDef(cur.exId); return `<div class="panel ${cur.pb ? 'pbrow' : ''}"><div class="ph"><b>${cur.pb ? '🏆 ' : ''}${cur.exId === 'session' ? sportName(cur.sport) + ' session' : L.name}</b>${cur.pb ? '<span class="pbtag">PB!</span>' : cur.exId !== 'session' ? `<b>${fmtVal(L, cur.key)}</b>` : ''}</div><div class="cmp">${compare(prev, cur, L).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div></div>`; }).join('')}
+    ${F.newBaselines?.length ? `<div class="panel"><h3>🎯 Baselines set</h3>${F.newBaselines.map(id => `<div class="unl">✓ ${goalDef(id).name}</div>`).join('')}</div>` : ''}
     ${newB.length || S.habits.slots > F.startSlots ? `<div class="panel glow"><h3>🔓 Unlocked</h3>${newB.map(b => `<div class="unl">${BADGES[b][0]} ${BADGES[b][1]}</div>`).join('')}${S.habits.slots > F.startSlots ? '<div class="unl">🔓 New habit slot</div>' : ''}</div>` : ''}
     <div class="row"><button onclick="F=null;go('more',{more:'share'})">Share ↗</button><button class="ghost" onclick="F=null;go('home')">Done</button></div>`;
 };
-window.toStep3 = () => { F.step = 3; const rec = S.habits.days[today()]; if (S.habits.active.includes('trained') && !(rec && rec.done.includes('trained'))) tickHabit('trained'); else render(); scrollTo(0, 0); };
-window.quickPick = q => { F.q = F.q === q ? null : q; const main = { ride: 'ride', run: 'run', swim: 'swim' }[q]; if (F.q && main && !F.sel.includes(main)) F.sel.push(main); render(); };
+window.toStep3 = () => { F.step = 3; render(); scrollTo(0, 0); };
+window.quickPick = q => { F.q = F.q === q ? null : q; if (F.q) F.sport = F.q; render(); };
 window.togglePick = id => { F.sel = F.sel.includes(id) ? F.sel.filter(x => x !== id) : [...F.sel, id]; render(); };
 window.bump = (id, i, f, d) => { const st = F.sets[id][i], v = (parseFloat(st[f]) || 0) + d; st[f] = Math.max(0, Math.round(v * 10) / 10); render(); };
-window.setF = (id, i, f, v) => { F.sets[id][i][f] = parseFloat(v); };
+window.setF = (id, i, f, v, typ) => { F.sets[id][i][f] = typ === 'time' ? parseTime(v) : parseFloat(v); };
+function cleanSets(L, sets) {
+  return sets.map(x => ({ ...x })).filter(st => KINDS[L.kind].fields.every(([f, , , opt]) => opt || st[f] > 0))
+    .map(st => { for (const [f, , , opt] of KINDS[L.kind].fields) if (opt && !(st[f] > 0)) delete st[f]; return st; });
+}
 window.finishLog = () => {
-  F.res = [];
-  for (const id of F.sel) {
-    const kind = lib(id).kind, sets = (F.sets[id] || []).map(x => ({ ...x })).filter(st => KINDS[kind].fields.every(([f, , , opt]) => opt || st[f] > 0));
-    sets.forEach(st => KINDS[kind].fields.forEach(([f, , , opt]) => { if (opt && !(st[f] > 0)) delete st[f]; }));
-    if (sets.length) F.res.push(saveSession(id, sets, true));
-  }
-  if (!F.res.length) { F.step = 2; render(); return toast('Enter at least one complete set', true); }
+  F.res = []; const before = new Set(S.goals.filter(g => g.baselineDate).map(g => g.id));
+  for (const id of F.sel) { const sets = cleanSets(goalDef(id), F.sets[id] || []); if (sets.length) F.res.push(saveSession(id, sets, true, id === 'session' ? F.sport : null)); }
+  if (!F.res.length) { F.step = 2; render(); return toast('Enter at least one result', true); }
   if (F.w != null && F.w !== F.startWeight && F.w > 0) {
     const lowest = F.w < Math.min(F.startWeight, ...S.log.map(e => e.weight)); S.metrics.weight.current = F.w; addXP(XP.weighin, 'weigh-in', true);
     if (lowest) { S.pbCount++; addXP(XP.pb, 'PB', true); } logPoint();
   }
-  const H = S.habits, rec = H.days[today()]; // "Trained today" is implied by logging
+  // Training is implied by logging: tick "Trained today" without asking again
+  const H = S.habits, rec = H.days[today()];
+  if (H.active.includes('trained') && !(rec && rec.done.includes('trained'))) tickHabit('trained', true);
+  updateBaselines(); F.newBaselines = S.goals.filter(g => g.baselineDate && !before.has(g.id)).map(g => g.id);
   checkBadges(); save(); F.step = 4; render(); scrollTo(0, 0);
-  if (F.res.some(x => x.cur.pb)) { const p = F.res.find(x => x.cur.pb).cur; pbMoment(`${fmtNum(p.key)} ${KINDS[lib(p.exId).kind].unit}`, lib(p.exId).name); }
+  const p = F.res.find(x => x.cur.pb)?.cur; if (p) pbMoment(fmtVal(goalDef(p.exId), p.key), goalDef(p.exId).name);
 };
 
 const MORE = {
@@ -742,41 +862,46 @@ const MORE = {
       <div class="row"><button onclick="shareCard()">Share ↗</button><button class="ghost" onclick="downloadCard()">Download PNG</button></div>`;
   },
   settings() {
-    const rows = Object.entries(S.metrics).map(([k, m]) => `<div class="panel"><b>${m.label}</b><div class="grid3">
+    const rows = ['weight', 'ftp'].map(k => { const m = S.metrics[k]; return `<div class="panel"><b>${m.label}</b><div class="grid3">
       <div><label>Baseline</label><input type="number" step="any" value="${m.base}" onchange="setMetric('${k}','base',this.value)"></div>
       <div><label>Target</label><input type="number" step="any" value="${m.target}" onchange="setMetric('${k}','target',this.value)"></div>
-      <div><label>Score weight</label><input type="number" step="0.5" value="${m.weight}" onchange="setMetric('${k}','weight',this.value)"></div></div></div>`).join('');
+      <div><label>Now</label><input type="number" step="any" value="${m.current}" onchange="setMetric('${k}','current',this.value)"></div></div></div>`; }).join('');
     return `<h3>Intensity</h3><p class="muted">Drop down any time. Moving up earns the 📈 badge.</p>${modePicker(S.persona, 'pickPersona')}
       <h3>Tracking</h3>${depthPicker(S.depth, 'pickDepth')}
+      <h3>Sports & goals</h3><div class="panel"><p class="muted">${S.sports.map(sportName).join(' · ')}<br>${activeGoals(S).length} active goals${S.goals.some(g => g.status === 'parked') ? `, ${S.goals.filter(g => g.status === 'parked').length} parked` : ''}</p><button class="ghost wide" onclick="go('goals')">Edit sports & goals</button></div>
       <h3>Profile</h3><div class="panel"><label>Name on card</label><input value="${esc(S.name)}" onchange="S.name=this.value;save()"></div>
-      <h3>Metrics</h3>${rows}
+      <h3>Body</h3>${rows}
       <div class="row"><button class="ghost" onclick="exportData()">Export data (JSON)</button>
       <button class="ghost danger" onclick="if(confirm('Wipe all data, including photos?')){localStorage.removeItem(STORE_KEY);localStorage.removeItem(V1_KEY);indexedDB.deleteDatabase('fitquest-photos');location.reload()}">Reset all</button></div>
-      <p class="muted center">Fit Quest v2 · all data stays in this browser</p>`;
+      <p class="muted center">Fit Quest v3 · all data stays in this browser</p>`;
   },
 };
 const rangeSeg = () => `<div class="range">${[['4w', '4W'], ['3m', '3M'], ['all', 'All']].map(([k, l]) => `<button class="${R.range === k ? 'on' : ''}" onclick="R.range='${k}';render()">${l}</button>`).join('')}</div>`;
 
-function exerciseView(id) {
-  const e = S.exercises.find(x => x.id === id); if (!e) { R.ex = null; return VIEWS.train(); }
-  const L = lib(id), K = KINDS[L.kind], ss = sessionsFor(id), last = ss.at(-1), best = bestKey(id), p = exProgress(e);
-  const seed = last ? last.sets : [Object.fromEntries(K.fields.map(([f]) => [f, '']))];
-  const ex = L.kind === 'power' && L.id === 'ftptest' && best ? `<small class="muted"> · FTP ≈ ${Math.round(best * 0.95)} W</small>` : '';
-  return `<button class="back" onclick="go('train')">‹ Train</button>
-    <div class="ph"><h2>${L.name}</h2><span class="pill">${TYPES[L.type]}</span></div>${L.note ? `<p class="muted">${L.note}</p>` : ''}
-    <div class="tiles"><div class="tile"><b>${best != null ? fmtNum(best) : '–'}</b><small>${K.keyLabel} PB${ex}</small></div><div class="tile"><b>${fmtNum(e.target)}</b><small>Target ${K.unit}</small></div><div class="tile"><b>${Math.round(p * 100)}%</b><small>to target</small></div></div>
-    <div class="panel"><div class="ph"><h3>History</h3>${rangeSeg()}</div>${lineChart(exSeries(id, R.range), { target: e.target, unit: K.unit, label: L.name })}
-      <p class="muted legend"><i class="lg1"></i>${K.keyLabel} <i class="lg2"></i>PB <i class="lg3"></i>${K.volLabel} <i class="lg4"></i>Target</p></div>
-    <div class="panel"><h3>Log session</h3>${last ? `<p class="muted">Prefilled from ${fmtDate(last.date)}. Beat it.</p>` : '<p class="muted">Your first log sets the baseline and re-anchors the target.</p>'}
-      <div id="sets">${seed.map((s, i) => setRow(L.kind, s, i)).join('')}</div>
-      <div class="row"><button class="ghost" onclick="addSet()">+ Set</button><button onclick="logSession('${id}')">Save session</button></div><div id="cmpout"></div></div>
-    ${ss.length ? `<div class="panel"><h3>Sessions</h3>${ss.slice().reverse().slice(0, 12).map(x => `<div class="sess"><b>${fmtDate(x.date)}</b><span>${x.sets.map(s => setText(L.kind, s)).join(' · ')}</span><em>${fmtNum(x.key)} ${x.pb ? '🏆' : ''}</em></div>`).join('')}</div>` : ''}
-    <details class="panel"><summary>Edit target</summary><div class="grid2"><div><label>Start (${K.unit})</label><input type="number" step="any" value="${e.base}" onchange="setEx('${id}','base',this.value)"></div>
-      <div><label>Target (${K.unit})</label><input type="number" step="any" value="${e.target}" onchange="setEx('${id}','target',this.value)"></div></div>
-      <button class="ghost danger" onclick="removeEx('${id}')">Remove from my list</button></details>`;
+function goalView(id) {
+  const g = S.goals.find(x => x.id === id); if (!g) { R.ex = null; return VIEWS.train(); }
+  const L = goalDef(id), K = KINDS[L.kind], ss = sessionsFor(id), last = ss.at(-1), best = bestKey(id), p = goalProgress(g), build = L.type === 'build', tm = isTimeKind(L);
+  const seed = last ? last.sets : seedSets(id);
+  const ftp = L.id === 'cyc_ftp' && best ? '' : '';
+  return `<button class="back" onclick="go('train')">‹ Goals</button>
+    <div class="ph"><h2>${L.name}</h2><span class="pill">${sportName(L.sport)}${build ? ' · build-up' : ' · test'}</span></div>${L.note ? `<p class="muted">${L.note}</p>` : ''}
+    ${g.status === 'parked' ? `<div class="panel warn">⏸️ Parked on ${fmtDate(g.parkedOn || today())}: no baseline within ${BASELINE_DAYS} days. It's kept but left out of your rating.<button class="wide" onclick="reactivateGoal('${id}')">Re-activate (new ${BASELINE_DAYS}-day window)</button></div>`
+      : !g.baselineDate ? `<div class="panel note">🎯 ${baselineText(g)}</div>` : ''}
+    <div class="tiles"><div class="tile"><b>${best != null ? fmtVal(L, best) : '–'}</b><small>${K.keyLabel.includes('PB') ? K.keyLabel : K.keyLabel + ' PB'}</small></div><div class="tile"><b>${build && best == null ? fmtNum(longestIn(L.sport)) : fmtVal(L, g.target)}</b><small>${build && best == null ? `longest of ${L.dist} km` : 'Target'}</small></div><div class="tile"><b>${Math.round(p * 100)}%</b><small>to target</small></div></div>
+    <div class="panel"><div class="ph"><h3>${build ? 'Build-up: longest ' + SPORTS[L.sport][1].toLowerCase() : 'History'}</h3>${rangeSeg()}</div>
+      ${lineChart(exSeries(id, R.range), build ? { target: L.dist, unit: 'km', label: L.name } : { target: g.target, unit: tm ? '' : K.unit, label: L.name, fmt: tm ? fmtTime : null, invert: !!K.lower })}
+      <p class="muted legend">${build ? `<i class="lg1"></i>Longest so far <i class="lg2"></i>Full-distance finish <i class="lg4"></i>${L.dist} km` : `<i class="lg1"></i>${K.keyLabel} <i class="lg2"></i>PB ${L.kind === 'rm' ? '<i class="lg3"></i>Volume ' : ''}<i class="lg4"></i>Target${K.lower ? ' · faster is higher' : ''}`}</p></div>
+    <div class="panel"><h3>${build ? 'Log a full-distance finish' : 'Log an attempt'}</h3>
+      <div id="sets">${seed.map((s, i) => setRow(L, s, i)).join('')}</div>
+      <div class="row">${L.kind === 'rm' ? '<button class="ghost" onclick="addSet()">+ Set</button>' : ''}<button onclick="logSession('${id}')">Save</button></div><div id="cmpout"></div></div>
+    ${ss.length ? `<div class="panel"><h3>Attempts</h3>${ss.slice().reverse().slice(0, 12).map(x => `<div class="sess"><b>${fmtDate(x.date)}</b><span>${x.sets.map(s => setText(L, s)).join(' · ')}</span><em>${fmtVal(L, x.key)} ${x.pb ? '🏆' : ''}</em></div>`).join('')}</div>` : ''}
+    <details class="panel"><summary>Edit target</summary><div class="grid2"><div><label>Start</label><input ${tm ? 'type="text"' : 'type="number" step="any"'} value="${tm ? fmtTime(g.base) : g.base}" onchange="setEx('${id}','base',this.value)"></div>
+      <div><label>Target</label><input ${tm ? 'type="text"' : 'type="number" step="any"'} value="${tm ? fmtTime(g.target) : g.target}" onchange="setEx('${id}','target',this.value)"></div></div>
+      <button class="ghost danger" onclick="removeEx('${id}')">Remove goal (attempts are kept)</button></details>`;
 }
-const setRow = (kind, s, i) => `<div class="setrow"><span>${i + 1}</span>${KINDS[kind].fields.map(([f, lbl, step]) => `<label><input type="number" inputmode="decimal" step="${step}" data-f="${f}" value="${s[f] ?? ''}" placeholder="0">${lbl}</label>`).join('')}<button class="x" onclick="this.parentNode.remove()">✕</button></div>`;
-const setText = (kind, s) => kind === 'endurance' ? `${s.min}′ · ${s.km}km${s.watts ? ` · ${s.watts}W` : ''}` : kind === 'weight' ? `${s.reps}×${s.kg}kg` : kind === 'reps' ? `${s.reps}` : kind === 'hold' ? `${s.sec}s` : kind === 'power' ? `${s.min}′@${s.watts}W` : `${s.km}km/${s.min}′`;
+const exerciseView = goalView;
+const setRow = (L, s, i) => `<div class="setrow"><span>${i + 1}</span>${KINDS[L.kind].fields.map(([f, lbl, step, opt, typ]) => `<label><input ${typ === 'time' ? 'type="text" placeholder="mm:ss"' : `type="number" inputmode="decimal" step="${step}" placeholder="0"`} data-f="${f}" data-t="${typ || ''}" value="${s[f] == null ? '' : typ === 'time' ? fmtTime(s[f]) : s[f]}">${lbl}</label>`).join('')}<button class="x" onclick="this.parentNode.remove()">✕</button></div>`;
+const setText = (L, s) => { const k = L.kind; return k === 'rm' ? `${s.reps}×${s.kg}kg` : k === 'reps' ? `${s.reps} reps` : k === 'hold' ? `${s.sec}s` : k === 'watts' ? `${s.watts}W` : k === 'far' ? `${s.km}km` : k === 'session' ? `${s.min} min${s.km ? ` · ${s.km}km` : ''}` : fmtTime(s.time); };
 
 const AFTER = {
   more() { if (R.more === 'share') renderSharePreview(); },
@@ -784,7 +909,7 @@ const AFTER = {
 };
 
 /* ---------- 11) ACTIONS ---------- */
-window.obPersona = p => { S.persona = p; S.exercises = seedExercises(p); S.habits.slots = START_SLOTS[p]; S.habits.active = []; fillSlots(); S.onboardStep = 1; save(); render(); };
+window.obPersona = p => { S.persona = p; S.goals = seedGoals(p); S.habits.slots = START_SLOTS[p]; S.habits.active = []; fillSlots(); S.onboardStep = 1; save(); render(); };
 window.obDepth = d => { S.depth = d; S.onboardStep = 2; save(); render(); };
 window.obMetric = (k, f, v) => { S.metrics[k][f] = parseFloat(v); if (f === 'current') S.metrics[k].base = parseFloat(v); save(); };
 window.obFinish = () => { S.onboarded = true; S.modeHistory.push({ date: today(), persona: S.persona }); S.habits.start = today(); save(); R.tab = 'home'; render(); toast(`${PERSONAS[S.persona].icon} ${PERSONAS[S.persona].name} mode activated`); };
@@ -798,22 +923,22 @@ window.doCheckin = () => {
   const pbWt = num('weight') < Math.min(m.weight.current, ...S.log.map(e => e.weight));
   const weighedIn = num('weight') !== m.weight.current;
   const first = !S.log.some(e => e.date === today());
-  for (const k of ['weight', 'ftp', 'sleep', 'steps', 'hours', 'strength']) if (Number.isFinite(num(k))) m[k].current = num(k);
+  for (const k of ['weight', 'ftp']) if (Number.isFinite(num(k))) m[k].current = num(k);
   markActiveDay();
-  if (first) { addXP(XP.checkin, 'check-in'); if ($('#in-workout').checked) addXP(XP.workout, 'workout'); if (weighedIn) addXP(XP.weighin, 'weigh-in'); }
+  if (first) { addXP(XP.checkin, 'check-in'); if (weighedIn) addXP(XP.weighin, 'weigh-in'); }
   if (pbFtp || pbWt) { addXP(XP.pb, 'NEW PB!'); S.pbCount++; pbMoment(pbFtp ? `FTP ${m.ftp.current} W` : `${m.weight.current} kg`, pbFtp ? 'New FTP' : 'Lowest weight'); }
   logPoint(); checkBadges(); save(); go('card');
 };
 function logPoint() { S.log = S.log.filter(e => e.date !== today()); S.log.push({ date: today(), ovr: overall(S), ftp: S.metrics.ftp.current, weight: S.metrics.weight.current }); }
 
-window.tickHabit = id => {
+window.tickHabit = (id, noRender) => {
   const H = S.habits, rec = H.days[today()] || (H.days[today()] = { done: [], n: H.active.length });
   rec.n = H.active.length;
   const wasHit = dayHit(rec);
   rec.done = rec.done.includes(id) ? rec.done.filter(x => x !== id) : [...rec.done, id];
   rec.done = rec.done.filter(x => H.active.includes(x));
   if (!wasHit && dayHit(rec) && !rec.xp) { rec.xp = 1; markActiveDay(); addXP(XP.habitDay, 'all habits done'); logPoint(); }
-  checkBadges(); save(); render();
+  checkBadges(); save(); if (!noRender) render();
 };
 window.activateHabit = id => { const H = S.habits; if (H.active.length >= H.slots) return; H.active.push(id); H.pendingSlot = false; S.lastUnlock = `${habit(id).icon} ${habit(id).label}`; if (H.days[today()]) H.days[today()].n = H.active.length; save(); render(); toast(`Habit added: ${habit(id).label}`); };
 window.addWish = () => { const v = $('#wish').value.trim(); if (!v) return; S.habits.wishlist.push({ id: 'w_' + uid(), label: v }); save(); render(); };
@@ -839,47 +964,44 @@ window.completeDay = () => {
   checkBadges(); save(); render();
 };
 
-// Exercises
-window.openLibrary = () => {
-  const mine = new Set(S.exercises.map(e => e.id));
-  modal(`<h2>Exercise library</h2>${Object.entries(TYPES).map(([t, l]) => `<h3>${l}</h3>${LIBRARY.filter(e => e.type === t).map(e =>
-    `<button class="exrow" ${mine.has(e.id) ? 'disabled' : ''} onclick="addEx('${e.id}')"><div class="exm"><b>${e.name}</b><small>${KINDS[e.kind].keyLabel} · ${e.sug ? 'suggested' : ''}</small></div><span class="pct">${mine.has(e.id) ? '✓' : '+'}</span></button>`).join('')}`).join('')}`);
+// Sports & goals
+window.toggleSport = k => { S.sports = S.sports.includes(k) ? S.sports.filter(x => x !== k) : [...S.sports, k]; save(); render(); };
+window.toggleGoal = id => {
+  const g = S.goals.find(x => x.id === id);
+  if (g) { if (sessionsFor(id).length && !confirm('Remove this goal? Your attempts are kept.')) return; S.goals = S.goals.filter(x => x.id !== id); }
+  else S.goals.push(newGoal(id, S.persona));
+  save(); render();
 };
-window.addEx = id => { S.exercises.push(newExercise(id, S.persona)); save(); closeModal(); go('train', { ex: id }); };
-window.removeEx = id => { if (!confirm('Remove from your list? Logged sessions are kept.')) return; S.exercises = S.exercises.filter(e => e.id !== id); save(); go('train'); };
-window.setEx = (id, f, v) => { const e = S.exercises.find(x => x.id === id); e[f] = parseFloat(v); if (f === 'target') e.targetEdited = true; save(); render(); };
+window.setGoalTarget = (id, v) => { const g = S.goals.find(x => x.id === id), L = goalDef(id); g.target = isTimeKind(L) ? parseTime(v) : parseFloat(v); g.targetEdited = true; save(); };
+window.reactivateGoal = id => { const g = S.goals.find(x => x.id === id); Object.assign(g, { status: 'active', since: today(), baselineDate: null, parkedOn: null }); save(); render(); toast(`🎯 ${goalDef(id).name} is back. ${BASELINE_DAYS} days to set a baseline.`); };
+window.removeEx = id => { if (!confirm('Remove this goal? Attempts are kept.')) return; S.goals = S.goals.filter(e => e.id !== id); save(); go('train'); };
+window.setEx = (id, f, v) => { const g = S.goals.find(x => x.id === id), L = goalDef(id); g[f] = isTimeKind(L) ? parseTime(v) : parseFloat(v); if (f === 'target') g.targetEdited = true; save(); render(); };
 window.addSet = () => {
-  const L = lib(R.ex), rows = document.querySelectorAll('#sets .setrow'), lastRow = rows[rows.length - 1];
-  const vals = lastRow ? Object.fromEntries([...lastRow.querySelectorAll('input')].map(i => [i.dataset.f, i.value])) : {};
-  $('#sets').insertAdjacentHTML('beforeend', setRow(L.kind, vals, rows.length));
+  const L = goalDef(R.ex), rows = document.querySelectorAll('#sets .setrow'), lastRow = rows[rows.length - 1];
+  const vals = lastRow ? readRow(lastRow) : {};
+  $('#sets').insertAdjacentHTML('beforeend', setRow(L, vals, rows.length));
 };
+const readRow = r => Object.fromEntries([...r.querySelectorAll('input')].map(i => [i.dataset.f, i.dataset.t === 'time' ? parseTime(i.value) : parseFloat(i.value)]));
 window.logSession = id => {
-  const L = lib(id), e = S.exercises.find(x => x.id === id);
-  const sets = readSets('#sets', L.kind);
-  if (!sets.length) return toast('Enter at least one complete set');
-  const r = saveSession(id, sets, false), prev = r.prev, cur = r.cur;
-  render();
-  $('#cmpout').innerHTML = `<div class="cmp">${prev ? `<small>vs ${fmtDate(prev.date)}</small>` : ''}${compare(prev, cur, L.kind).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div>`;
+  const L = goalDef(id), sets = cleanSets(L, [...document.querySelectorAll('#sets .setrow')].map(readRow));
+  if (!sets.length) return toast('Enter a complete result');
+  const { prev, cur } = saveSession(id, sets, false); updateBaselines(); checkBadges(); save(); render();
+  $('#cmpout').innerHTML = `<div class="cmp">${prev ? `<small>vs ${fmtDate(prev.date)}</small>` : ''}${compare(prev, cur, L).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div>`;
 };
-function readSets(root, kind) {
-  return [...document.querySelectorAll(root + ' .setrow')].map(r => Object.fromEntries([...r.querySelectorAll('input')].map(i => [i.dataset.f, parseFloat(i.value)])))
-    .filter(s => KINDS[kind].fields.every(([f, , , opt]) => opt ? true : Number.isFinite(s[f]) && s[f] > 0))
-    .map(s => { for (const [f, , , opt] of KINDS[kind].fields) if (opt && !(s[f] > 0)) delete s[f]; return s; });
-}
-// Core save used by the exercise screen and the post-workout flow. quiet = no toasts/PB overlay.
-function saveSession(id, sets, quiet) {
-  const L = lib(id); let e = S.exercises.find(x => x.id === id);
-  if (!e) { e = newExercise(id, S.persona); S.exercises.push(e); }
-  const prev = sessionsFor(id).at(-1), prevBest = bestKey(id);
-  const cur = { id: uid(), t: Date.now(), exId: id, date: today(), sets, key: keyOf(L.kind, sets), vol: volumeOf(L.kind, sets) };
-  cur.pb = prevBest != null && cur.key > prevBest;
-  if (!e.logged) { e.logged = true; if (prevBest == null) { const gap = (lib(id).target - lib(id).base) * PERSONAS[S.persona].targetMult;
-    e.base = cur.key; if (!e.targetEdited) e.target = +(Math.max(e.target, cur.key + gap * 0.5)).toFixed(1); } }
+// Core save used by the goal screen and the post-workout flow. quiet = no toasts/PB overlay.
+function saveSession(id, sets, quiet, sport) {
+  const L = goalDef(id), prev = sessionsFor(id).at(-1), prevBest = bestKey(id);
+  const cur = mkSession(id, today(), sets); if (sport) cur.sport = sport;
+  cur.pb = id !== 'session' && prevBest != null && isBetter(L, cur.key, prevBest);
+  const g = S.goals.find(x => x.id === id);
+  if (g && prevBest == null && id !== 'session') { // first attempt is the baseline; re-anchor the target if it's already beaten
+    g.base = cur.key; if (!g.targetEdited && !isBetter(L, g.target, cur.key)) g.target = roundFor(L, cur.key + (L.target - L.base) * 0.5 * PERSONAS[S.persona].targetMult);
+  }
   S.sessions.push(cur);
-  if (id === 'ftptest') { const f = Math.round(cur.key * 0.95); if (f > S.metrics.ftp.current) S.metrics.ftp.current = f; }
+  if (id === 'cyc_ftp' && cur.key > S.metrics.ftp.current) S.metrics.ftp.current = Math.round(cur.key);
   const firstToday = !S.sessions.some(x => x !== cur && x.date === today());
-  addXP(firstToday ? XP.session : 10, 'session logged', quiet || cur.pb);
-  if (cur.pb) { S.pbCount++; addXP(XP.pb, 'PB bonus', true); if (!quiet) pbMoment(`${fmtNum(cur.key)} ${KINDS[L.kind].unit}`, `${L.name} · +${Math.round(XP.pb * PERSONAS[S.persona].xpMult)} XP`); }
+  addXP(firstToday ? XP.session : 10, 'logged', quiet || cur.pb);
+  if (cur.pb) { S.pbCount++; addXP(XP.pb, 'PB bonus', true); if (!quiet) pbMoment(fmtVal(L, cur.key), `${L.name} · +${Math.round(XP.pb * PERSONAS[S.persona].xpMult)} XP`); }
   markActiveDay(); logPoint(); checkBadges(); save();
   return { cur, prev };
 }
@@ -948,43 +1070,52 @@ document.querySelectorAll('#nav button').forEach(b => b.onclick = () => go(b.dat
 
 // ?demo seeds 8 weeks of sample data (replaces local data, generates sample silhouette photos)
 async function seedDemo() {
-  S = freshState(); S.persona = 'athlete'; S.onboarded = true; S.habits.slots = 3;
+  S = freshState(); S.persona = 'athlete'; S.onboarded = true; S.habits.slots = 3; S.sports = ['run', 'cycle', 'swim', 'strength', 'bodyweight'];
   const start = addDays(today(), -55); S.habits.start = start;
   const rnd = (i, k) => (Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % 1;
   for (let i = 0; i <= 55; i++) {
     const d = addDays(start, i), t = i / 55;
     S.metrics.ftp.current = Math.round(240 + 22 * t); S.metrics.weight.current = +(102.8 - 4.6 * t + Math.abs(rnd(i, 1)) * 0.4).toFixed(1);
-    S.metrics.hours.current = 7; S.metrics.strength.current = 2; S.metrics.sleep.current = 7; S.metrics.steps.current = 8500;
     const rec = { done: [], n: S.habits.active.length };
     for (const h of S.habits.active) if (Math.abs(rnd(i, h.length)) > (i < 28 ? 0.45 : 0.08) || i % 7 < 4) rec.done.push(h);
     S.habits.days[d] = rec;
     S.streak = i + 1; S.bestStreak = S.streak; S.lastCheckin = d; S.xp += 70;
     S.log.push({ date: d, ovr: 0, ftp: S.metrics.ftp.current, weight: S.metrics.weight.current });
-    // weekly evaluation as we go
     if (i % 7 === 6) { todayOverride = addDays(d, 1); evaluateHabitWeeks(); todayOverride = null; }
   }
-  const plan = { bench: [70, 0.9], trapdl: [120, 1.7], legpress: [140, 2.6], pullup: [4, 0.35], pushup: [25, 1.4], plank: [60, 6], ftptest: [253, 2.4], ride: [40, 2.5], swim: [1.5, 0.08], run: [5, 0.25] };
+  S.goals = ['run_5k', 'run_21', 'cyc_ftp', 'cyc_5min', 'cyc_100', 'swim_400', 'swim_1900', 'str_trapdl_1', 'str_bench_5', 'bw_pullup', 'bw_plank'].map(id => ({ ...newGoal(id, 'athlete'), since: start }));
+  // [goal, start value, change per week (negative = faster)]
+  const plan = { run_5k: [Tm(29, 40), -14], cyc_ftp: [253, 2.6], cyc_5min: [300, 4], swim_400: [Tm(9, 20), -6], str_trapdl_1: [130, 2], str_bench_5: [65, 0.8], bw_pullup: [4, 0.4], bw_plank: [60, 9] };
   for (const [id, [b, step]] of Object.entries(plan)) {
-    const L = lib(id), e = S.exercises.find(x => x.id === id); e.logged = true; e.base = b;
-    for (let w = 0; w < 8; w++) for (let k = 0; k < (L.type === 'strength' ? 2 : 1); k++) {
-      const d = addDays(start, w * 7 + (k ? 4 : 1) + (id.length % 2)), v = b + step * (w * 2 + k) * (0.8 + Math.abs(rnd(w, id.length + k)) * 0.4) - (w === 5 ? step * 2 : 0);
-      const sets = L.kind === 'weight' ? [{ reps: 5, kg: Math.round(v / (1 + 5 / 30) / 2.5) * 2.5 }, { reps: 5, kg: Math.round(v / (1 + 5 / 30) / 2.5) * 2.5 }, { reps: 8, kg: Math.round(v * 0.7 / 2.5) * 2.5 }]
-        : L.kind === 'reps' ? [{ reps: Math.round(v) }, { reps: Math.round(v * 0.8) }] : L.kind === 'hold' ? [{ sec: Math.round(v / 5) * 5 }, { sec: Math.round(v * 0.7 / 5) * 5 }]
-        : L.kind === 'power' ? [{ min: 20, watts: Math.round(v) }] : L.kind === 'endurance' ? [{ min: Math.round(v * 2.2), km: +v.toFixed(1), watts: 175 + w * 3 }] : [{ km: +v.toFixed(1), min: Math.round(v * (L.id === 'swim' ? 22 : L.id === 'run' ? 6.5 : 2)) }];
-      const best = bestKey(id), key = keyOf(L.kind, sets);
-      S.sessions.push({ id: uid(), t: w * 10 + k, exId: id, date: d, sets, key, vol: volumeOf(L.kind, sets), pb: best != null && key > best });
-      if (best != null && key > best) S.pbCount++;
+    const L = goalDef(id);
+    for (let w = 0; w < 8; w++) {
+      if (L.sport === 'run' || L.sport === 'swim' ? w % 2 : 0) continue; // timed tests every 2 weeks
+      const d = addDays(start, w * 7 + 1 + (id.length % 3)), v = b + step * w * (0.85 + Math.abs(rnd(w, id.length)) * 0.3) - (w === 5 ? step * 1.5 : 0);
+      const sets = L.kind === 'rm' ? [{ reps: L.n, kg: Math.round(v / 2.5) * 2.5 }, { reps: L.n, kg: Math.round(v * 0.95 / 2.5) * 2.5 }] : L.kind === 'reps' ? [{ reps: Math.round(v) }]
+        : L.kind === 'hold' ? [{ sec: Math.round(v / 5) * 5 }] : L.kind === 'watts' ? [{ watts: Math.round(v) }] : [{ time: Math.round(v) }];
+      S.sessions.push(mkSession(id, d, sets, w * 10));
     }
   }
-  S.metrics.ftp.current = Math.max(S.metrics.ftp.current, Math.round(bestKey('ftptest') * 0.95));
+  // general sessions: long runs, rides and swims building toward the long goals
+  for (let w = 0; w < 8; w++) {
+    S.sessions.push({ id: uid(), t: 1, exId: 'session', sport: 'run', date: addDays(start, w * 7 + 5), sets: [{ min: 50 + w * 9, km: +(8 + w * 1.5).toFixed(1) }], key: null, vol: null });
+    S.sessions.push({ id: uid(), t: 2, exId: 'session', sport: 'cycle', date: addDays(start, w * 7 + 6), sets: [{ min: 120 + w * 12, km: 45 + w * 6 }], key: null, vol: null });
+    S.sessions.push({ id: uid(), t: 3, exId: 'session', sport: 'swim', date: addDays(start, w * 7 + 3), sets: [{ min: 30 + w * 3, km: +(1.2 + w * 0.12).toFixed(2) }], key: null, vol: null });
+  }
+  markPBs(S.sessions); S.pbCount = S.sessions.filter(x => x.pb).length;
+  for (const g of S.goals) { const first = sessionsFor(g.id)[0]; if (first) g.base = first.key; }
+  S.metrics.ftp.current = Math.max(S.metrics.ftp.current, Math.round(bestKey('cyc_ftp')));
+  updateBaselines();
+  // baseline-week examples: one urgent, one fresh, one parked
+  S.goals.push({ ...newGoal('run_10k', 'athlete'), since: addDays(today(), -12) }, { ...newGoal('cyc_tt40', 'athlete'), since: addDays(today(), -5) }, { ...newGoal('swim_css', 'athlete'), since: addDays(today(), -20) });
+  updateBaselines();
   S.log.forEach(e => e.ovr = Math.round(40 + (overall(S) - 40) * (0.35 + 0.65 * daysBetween(start, e.date) / 55)));
   S.log.at(-1).ovr = overall(S); S.lastCheckin = addDays(today(), -1);
   delete S.habits.days[today()];
   S.challenge.day = 18; S.challenge.lastDate = addDays(today(), -1); S.challenge.startDate = addDays(today(), -18);
   if (S.habits.slots > S.habits.active.length) S.habits.active.push('steps');
   S.habits.wishlist = [{ id: 'w_acv', label: 'Apple cider vinegar' }, { id: 'w_multi', label: 'Multivitamin' }];
-  S.upgraded = false; checkBadges(); S.lastUnlock = S.habits.active.length > 3 ? `${habit(S.habits.active.at(-1)).icon} ${habit(S.habits.active.at(-1)).label}` : S.lastUnlock;
-  // sample photos: simple silhouettes that slim down week by week
+  S.upgraded = false; S.hintSeen = true; checkBadges();
   try { await new Promise(r => { const q = indexedDB.deleteDatabase('fitquest-photos'); q.onsuccess = q.onerror = q.onblocked = r; }); idb.db = null; } catch (e) {}
   for (let w = 0; w < 8; w++) for (const pose of POSES) {
     const c = document.createElement('canvas'); c.width = 600; c.height = 800; const g = c.getContext('2d');
@@ -1001,5 +1132,5 @@ async function seedDemo() {
 
 (async function boot() {
   if (location.search.includes('demo')) { await seedDemo(); history.replaceState(null, '', location.pathname); }
-  await loadPhotos(); applyMissedDays(); checkBadges(); save(); render();
+  await loadPhotos(); applyMissedDays(); updateBaselines(); checkBadges(); save(); render();
 })();
