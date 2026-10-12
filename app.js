@@ -556,11 +556,49 @@ function exSeries(id, range) {
   }
   return sessionsFor(id).map(x => ({ d: x.date, y: x.key, pb: !!x.pb, bar: x.vol || 0 })).filter(p => p.d >= sinceRange(range));
 }
+// ---------- bar charts: one bar per attempt (or best per week/month), taller = better ----------
+const weekKey = d => { const t = new Date(d + 'T12:00:00'); t.setDate(t.getDate() - ((t.getDay() + 6) % 7)); return t.toISOString().slice(0, 10); };
+function aggregate(pts, agg, invert) {
+  if (agg === 'each') return pts.slice(-12);
+  const by = new Map(); for (const p of pts) { const k = agg === 'week' ? weekKey(p.d) : p.d.slice(0, 7) + '-01'; const c = by.get(k); if (!c || (invert ? p.y < c.y : p.y > c.y)) by.set(k, { ...p, d: k, pb: (c && c.pb) || p.pb, n: (c?.n || 0) + 1 }); else c.n++; }
+  return [...by.values()].slice(-12);
+}
+// normalise so "better" is always taller; times invert
+function barScale(vals, target, invert) {
+  const all = target != null ? [...vals, target] : vals, lo = Math.min(...all), hi = Math.max(...all), span = (hi - lo) || Math.abs(hi) * 0.2 || 1;
+  return invert ? v => clamp01((hi + span * 0.35 - v) / (hi + span * 0.35 - lo)) : v => clamp01((v - (lo - span * 0.35)) / (hi - (lo - span * 0.35)));
+}
+let barSeq = 0;
+function barChart(all, o = {}) {
+  const agg = R.agg || 'each', pts = aggregate(all, agg, o.invert), cid = 'bc' + (++barSeq);
+  const seg = all.length > 12 || agg !== 'each' ? `<div class="range aggs">${[['each', 'Last 12'], ['week', 'Weekly'], ['month', 'Monthly']].map(([k, l]) => `<button class="${agg === k ? 'on' : ''}" onclick="R.agg='${k}';render()">${l}</button>`).join('')}</div>` : '';
+  if (!pts.length) return `${seg}<div class="empty">No attempts yet. Log one and your first bar appears here.</div>`;
+  const fmt = o.fmt || (v => `${fmtNum(v)}${o.unit ? ' ' + o.unit : ''}`), sc = barScale(pts.map(p => p.y), o.target, o.invert);
+  const W = 320, H = 150, top = 14, base = 128, n = pts.length, slot = W / Math.max(n, 6), bw = Math.min(30, slot * 0.66);
+  let best = null;
+  const bars = pts.map((p, i) => { const h = Math.max(4, sc(p.y) * (base - top)), x = i * slot + (slot - bw) / 2, y = base - h;
+    const isBest = best == null || (o.invert ? p.y < best : p.y > best); if (isBest) best = p.y;
+    const tip = `${fmtDate(p.d)}${agg !== 'each' ? (agg === 'week' ? ' (week)' : ' (month)') : ''} · ${fmt(p.y)}${p.pb ? ' · PB 🏆' : ''}`;
+    return `<g class="bar ${p.pb ? 'pb' : ''}" style="--i:${i}" onclick="document.getElementById('${cid}-tip').textContent='${tip.replace(/'/g, "\\'")}';this.parentNode.querySelectorAll('.bar').forEach(b=>b.classList.remove('sel'));this.classList.add('sel')">
+      <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="4"/><rect class="hit" x="${(i * slot).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${base}"/>
+      ${n <= 8 ? `<text x="${(x + bw / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" class="bv">${fmt(p.y)}</text>` : ''}
+      <text x="${(x + bw / 2).toFixed(1)}" y="${base + 13}" text-anchor="middle" class="bd">${agg === 'month' ? new Date(p.d + 'T12:00').toLocaleDateString('en-GB', { month: 'short' }) : fmtDate(p.d).replace(/ \d{4}$/, '')}</text></g>`; }).join('');
+  const ty = o.target != null ? base - sc(o.target) * (base - top) : null;
+  const tl = ty != null ? `<line x1="0" x2="${W}" y1="${ty.toFixed(1)}" y2="${ty.toFixed(1)}" class="tline"/><text x="${W - 2}" y="${(ty - 4).toFixed(1)}" text-anchor="end" class="tlbl">Target ${fmt(o.target)}</text>` : '';
+  const last = pts.at(-1);
+  return `${seg}<svg viewBox="0 0 ${W} ${H}" class="bars ${o.invert ? 'inv' : ''}"><defs><filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><linearGradient id="bgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff7a3d"/><stop offset="1" stop-color="#c2410c"/></linearGradient><linearGradient id="ggrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe27a"/><stop offset="1" stop-color="#e0a000"/></linearGradient></defs>
+    <line x1="0" x2="${W}" y1="${base}" y2="${base}" class="axis"/>${bars}${tl}</svg>
+    <p class="bartip" id="${cid}-tip">${fmtDate(last.d)} · ${fmt(last.y)}${last.pb ? ' · PB 🏆' : ''} <span class="muted">· tap a bar</span></p>`;
+}
+// mini bars for Home rows (last 10 values)
+function miniBars(vals, invert, pbs = []) {
+  if (vals.length < 1) return '<svg class="spark" viewBox="0 0 60 20"></svg>';
+  const v = vals.slice(-10), sc = barScale(v, null, invert), w = 60 / Math.max(v.length, 5);
+  return `<svg class="spark mbars" viewBox="0 0 60 20">${v.map((x, i) => { const h = Math.max(2, sc(x) * 18); return `<rect x="${(i * w + w * 0.15).toFixed(1)}" y="${(20 - h).toFixed(1)}" width="${(w * 0.7).toFixed(1)}" height="${h.toFixed(1)}" rx="1" class="${pbs[vals.length - v.length + i] ? 'pb' : ''}"/>`; }).join('')}</svg>`;
+}
 function sparkline(id) {
-  const L = goalDef(id), p = exSeries(id, 'all').slice(-10).map(x => x.y); if (p.length < 2) return '';
-  const inv = KINDS[L.kind].lower && L.type !== 'build', lo = Math.min(...p), hi = Math.max(...p);
-  const d = p.map((v, i) => { let t = (v - lo) / ((hi - lo) || 1); if (inv) t = 1 - t; return `${i ? 'L' : 'M'}${(i / (p.length - 1) * 60).toFixed(1)},${(18 - t * 16).toFixed(1)}`; }).join('');
-  return `<svg class="spark" viewBox="0 0 60 20"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+  const L = goalDef(id), pts = exSeries(id, 'all'); if (!pts.length) return '';
+  return miniBars(pts.map(x => x.y), KINDS[L.kind].lower && L.type !== 'build', pts.map(x => x.pb));
 }
 
 /* ---------- 9) SHARE CARDS (canvas -> PNG) ---------- */
@@ -854,7 +892,7 @@ const VIEWS = {
     if (R.ex) return goalView(R.ex);
     const act = activeGoals(S), parked = S.goals.filter(g => g.status === 'parked');
     const row = g => { const L = goalDef(g.id), b = bestKey(g.id), last = sessionsFor(g.id).at(-1), p = goalProgress(g), pend = g.status === 'active' && !g.baselineDate;
-      return `<button class="exrow ${g.status} ${L.hx ? 'hx' : ''}" onclick="go('train',{ex:'${g.id}'})"><div class="exm"><b>${L.name}${L.type === 'build' ? ' <em class="tag">build-up</em>' : ''}${g.overridden ? ' <em class="tag warn">over cap</em>' : ''}</b>${L.station && hxWeight(L.station) ? `<small class="hxw">${hxWeight(L.station)}</small>` : ''}
+      return `<button class="exrow ${g.status} ${L.hx ? 'hx' : ''}" onclick="go('train',{ex:'${g.id}'})"><div class="exm"><b>${infoBtn(g.id)} ${L.name}${L.type === 'build' ? ' <em class="tag">build-up</em>' : ''}${g.overridden ? ' <em class="tag warn">over cap</em>' : ''}</b>${L.station && hxWeight(L.station) ? `<small class="hxw">${hxWeight(L.station)}</small>` : ''}
         <small>${pend ? `🎯 ${daysLeft(g)}d left for a baseline` : g.status === 'parked' ? 'Parked · tap to re-activate' : `${last ? `Last ${fmtDate(last.date)} · ` : ''}${L.type === 'build' && b == null ? `Longest ${fmtNum(longestIn(L.sport))} of ${L.dist} km` : `PB ${fmtVal(L, b)} → ${fmtVal(L, g.target)}`}`}</small>
         <div class="bar"><i style="width:${p * 100}%"></i></div></div>${sparkline(g.id)}<span class="pct">${Math.round(p * 100)}%</span></button>`; };
     const sports = [...new Set(act.map(g => goalDef(g.id).sport))];
@@ -967,10 +1005,9 @@ function goalTrack(g) {
   const d4 = addDays(today(), -28), recent = sessionsFor(g.id).some(x => x.date > d4);
   return paceStatus(goalProgress(g), g.since > d4 ? 0 : progressAt(g, d4), g.since, recent);
 }
-function metricSpark(k, invert) {
-  const p = S.log.slice(-28).map(e => e[k]).filter(v => v != null); if (p.length < 2) return '<svg class="spark" viewBox="0 0 60 20"></svg>';
-  const lo = Math.min(...p), hi = Math.max(...p);
-  return `<svg class="spark" viewBox="0 0 60 20"><path d="${p.map((v, i) => { let t = (v - lo) / ((hi - lo) || 1); if (invert) t = 1 - t; return `${i ? 'L' : 'M'}${(i / (p.length - 1) * 60).toFixed(1)},${(18 - t * 16).toFixed(1)}`; }).join('')}" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+function metricSpark(k, invert) { // weekly values (last ~10 weeks) as mini bars
+  const by = new Map(); for (const e of S.log) if (e[k] != null) by.set(weekKey(e.date), e[k]);
+  return miniBars([...by.values()], invert);
 }
 const trow = (name, val, p, [cls, txt], spark, onclick) => `<button class="trow" onclick="${onclick}"><div class="tm"><div class="tt"><b>${name}</b><span>${val}</span></div><div class="bar"><i style="width:${Math.round(clamp01(p) * 100)}%"></i></div></div>
   <div class="ts ${cls}">${spark}<em>${txt}</em></div></button>`;
@@ -1013,7 +1050,7 @@ window.startLog = pre => {
 const stepDots = () => `<div class="steps">${[1, 2, 3].map(i => `<i class="${i <= F.step ? 'on' : ''}"></i>`).join('')}</div>`;
 const pickTile = id => { if (id === 'session') return `<button class="pick gen ${F.sel.includes(id) ? 'on' : ''}" onclick="togglePick('session')"><b>⏱️ Training session</b><small>Any workout. Just duration${F.q ? ` · ${SPORTS[F.q][1]}` : ''}. No PB.</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`;
   const L = goalDef(id), g = S.goals.find(x => x.id === id), last = sessionsFor(id).at(-1), pend = g && g.status === 'active' && !g.baselineDate;
-  return `<button class="pick ${L.hx ? 'hx' : ''} ${F.sel.includes(id) ? 'on' : ''} ${pend ? 'need' : ''}" onclick="togglePick('${id}')"><b>${L.name}</b><small>${pend ? `🎯 baseline · ${daysLeft(g)}d left` : last ? `${fmtDate(last.date)} · ${fmtVal(L, last.key)}` : sportName(L.sport)}</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`; };
+  return `<button class="pick ${L.hx ? 'hx' : ''} ${F.sel.includes(id) ? 'on' : ''} ${pend ? 'need' : ''}" onclick="togglePick('${id}')"><b>${L.name} ${infoBtn(id)}</b><small>${pend ? `🎯 baseline · ${daysLeft(g)}d left` : last ? `${fmtDate(last.date)} · ${fmtVal(L, last.key)}` : sportName(L.sport)}</small><i>${F.sel.includes(id) ? '✓' : '+'}</i></button>`; };
 VIEWS.log = () => {
   if (!F) { R.tab = 'home'; return VIEWS.home(); }
   if (F.step === 1) {
@@ -1034,7 +1071,7 @@ VIEWS.log = () => {
     return `${stepDots()}<div class="ph"><h2>Your results</h2><button class="x" onclick="F.step=1;render()">‹ Back</button></div><p class="muted">Prefilled from last time. Tap − / + to adjust. Times are mm:ss.</p>
       ${F.sel.includes('hx_race') ? raceForm() : ''}${F.sel.filter(id => id !== 'hx_race').map(id => { const L = goalDef(id), last = sessionsFor(id).at(-1), sets = F.sets[id] || (F.sets[id] = seedSets(id)), multi = L.kind === 'rm';
         const head = id === 'session' ? `<b class="en">⏱️ Training session</b></div><div class="chips">${S.sports.map(k => `<button class="chip btn ${F.sport === k ? 'on' : ''}" onclick="F.sport='${k}';render()">${SPORTS[k][0]} ${SPORTS[k][1]}</button>`).join('')}</div><div>`
-          : `<b class="en">${L.name}</b><small class="muted">${last ? 'Last ' + fmtVal(L, last.key) : 'Baseline attempt'}${bestKey(id) != null ? ` · PB ${fmtVal(L, bestKey(id))}` : ''}</small>`;
+          : `<b class="en">${L.name} ${infoBtn(id)}</b><small class="muted">${last ? 'Last ' + fmtVal(L, last.key) : 'Baseline attempt'}${bestKey(id) != null ? ` · PB ${fmtVal(L, bestKey(id))}` : ''}</small>`;
         return `<div class="panel" id="fx-${id}"><div class="ph">${head}</div>
           ${sets.map((st, i) => `<div class="srow"><span class="sn">${sets.length > 1 ? i + 1 : ''}</span>${KINDS[L.kind].fields.map(([f, lbl, step, opt, typ]) => `<div class="stp"><button onclick="bump('${id}',${i},'${f}',-${step})">−</button><label><input ${typ === 'time' ? 'type="text" placeholder="mm:ss"' : 'type="number" inputmode="decimal" placeholder="–"'} value="${st[f] == null ? '' : typ === 'time' ? fmtTime(st[f]) : st[f]}" onchange="setF('${id}',${i},'${f}',this.value,'${typ || ''}')"><small>${lbl}${opt ? ' (opt.)' : ''}</small></label><button onclick="bump('${id}',${i},'${f}',${step})">+</button></div>`).join('')}
           ${sets.length > 1 ? `<button class="x" onclick="F.sets['${id}'].splice(${i},1);render()">✕</button>` : ''}</div>`).join('')}
@@ -1212,13 +1249,13 @@ function goalView(id) {
   const seed = last ? last.sets : seedSets(id);
   const ftp = L.id === 'cyc_ftp' && best ? '' : '';
   return `<button class="back" onclick="go('train')">‹ Goals</button>
-    <div class="ph ${L.hx ? 'hxhead' : ''}"><h2>${L.name}</h2><span class="pill">${sportName(L.sport)}${build ? ' · build-up' : ' · test'}</span></div>${L.note ? `<p class="muted">${L.note}</p>` : ''}${L.station && hxWeight(L.station) ? `<p class="hxw big">${hxDivLabel()}: <b>${hxWeight(L.station)}</b></p>` : ''}
+    <div class="ph ${L.hx ? 'hxhead' : ''}"><h2>${L.name}</h2><button class="howbtn" onclick="howto('${id}')">ⓘ How to</button><span class="pill">${sportName(L.sport)}${build ? ' · build-up' : ' · test'}</span></div>${L.note ? `<p class="muted">${L.note}</p>` : ''}${L.station && hxWeight(L.station) ? `<p class="hxw big">${hxDivLabel()}: <b>${hxWeight(L.station)}</b></p>` : ''}
     ${g.status === 'parked' ? `<div class="panel warn">⏸️ Parked on ${fmtDate(g.parkedOn || today())}: no baseline within ${BASELINE_DAYS} days. It's kept but left out of your rating.<button class="wide" onclick="reactivateGoal('${id}')">Re-activate (new ${BASELINE_DAYS}-day window)</button></div>`
       : !g.baselineDate ? `<div class="panel note">🎯 ${baselineText(g)}</div>` : ''}
     <div class="tiles"><div class="tile"><b>${best != null ? fmtVal(L, best) : '–'}</b><small>${K.keyLabel.includes('PB') ? K.keyLabel : K.keyLabel + ' PB'}</small></div><div class="tile"><b>${build && best == null ? fmtNum(longestIn(L.sport)) : fmtVal(L, g.target)}</b><small>${build && best == null ? `longest of ${L.dist} km` : 'Target'}</small></div><div class="tile"><b>${Math.round(p * 100)}%</b><small>to target</small></div></div>
     <div class="panel"><div class="ph"><h3>${build ? 'Build-up: longest ' + SPORTS[L.sport][1].toLowerCase() : 'History'}</h3>${rangeSeg()}</div>
-      ${lineChart(exSeries(id, R.range), build ? { target: L.dist, unit: 'km', label: L.name } : { target: g.target, unit: tm ? '' : K.unit, label: L.name, fmt: tm ? fmtTime : null, invert: !!K.lower })}
-      <p class="muted legend">${build ? `<i class="lg1"></i>Longest so far <i class="lg2"></i>Full-distance finish <i class="lg4"></i>${L.dist} km` : `<i class="lg1"></i>${K.keyLabel} <i class="lg2"></i>PB ${L.kind === 'rm' ? '<i class="lg3"></i>Volume ' : ''}<i class="lg4"></i>Target${K.lower ? ' · faster is higher' : ''}`}</p></div>
+      ${barChart(exSeries(id, R.range), build ? { target: L.dist, unit: 'km', label: L.name } : { target: g.target, unit: tm ? '' : K.unit, label: L.name, fmt: tm ? fmtTime : null, invert: !!K.lower })}
+      <p class="muted legend"><i class="lgb"></i>${build ? 'Longest so far' : 'Attempt'} <i class="lgpb"></i>PB <i class="lgt"></i>Target${KINDS[L.kind].lower && !build ? ' · faster = taller' : ''}</p></div>
     <div class="panel"><h3>${build ? 'Log a full-distance finish' : 'Log an attempt'}</h3>
       <div id="sets">${seed.map((s, i) => setRow(L, s, i)).join('')}</div>
       <div class="row">${L.kind === 'rm' ? '<button class="ghost" onclick="addSet()">+ Set</button>' : ''}<button onclick="logSession('${id}')">Save</button></div><div id="cmpout"></div></div>
@@ -1354,7 +1391,11 @@ function pbMoment(big, small) {
 }
 
 // Modal
-function modal(html) { const m = $('#modal'); m.innerHTML = `<div class="sheet"><button class="x close" onclick="closeModal()">✕</button>${html}</div>`; m.classList.remove('hidden'); m.onclick = e => { if (e.target === m) closeModal(); }; }
+function modal(html) { const m = $('#modal'); m.innerHTML = `<div class="sheet"><div class="handle" aria-hidden="true"></div><button class="x close" onclick="closeModal()">✕</button>${html}</div>`; m.classList.remove('hidden'); m.onclick = e => { if (e.target === m) closeModal(); };
+  const sh = m.querySelector('.sheet'); let y0 = null, dy = 0; // swipe down to close
+  sh.addEventListener('touchstart', e => { y0 = sh.scrollTop <= 0 ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  sh.addEventListener('touchmove', e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); sh.style.transform = `translateY(${dy}px)`; }, { passive: true });
+  sh.addEventListener('touchend', () => { if (y0 != null && dy > 90) closeModal(); else sh.style.transform = ''; y0 = null; }); }
 window.closeModal = () => { const m = $('#modal'); m.classList.add('hidden'); m.innerHTML = ''; stopCam(); };
 
 // Photos

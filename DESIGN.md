@@ -117,3 +117,21 @@ Home order: greeting → **Log workout** CTA (still first and largest) → Overa
     - **Stalled** (red): no gain.
     - **No baseline · Nd** (red): no baseline set yet.
   - Rows open the goal detail page; the body rows open the athlete card.
+
+## How-to explainers (v3.5) · `howto.js`
+- **Info button** `infoBtn(id)` (an ⓘ) appears on Train goal rows, on log step 1 tiles and on step 2 result panels. The goal detail page has a "ⓘ How to" pill instead. The button stops event propagation, so it opens the sheet rather than the row.
+- **Sheet:** `howto(id)` → `modal()` bottom sheet with a grab handle. Swipe down more than 90 px, tap the backdrop or tap ✕ to close. This works for every modal.
+- **Animation:** `moveSVG(key)` draws a stick/cartoon figure (avatar palette, orange torso, skin limbs) using two-link IK poses (`htPose`). It loops with SMIL `<animate>` on polyline points and circle centres, entirely inline and offline.
+  - 19 shared movements in `MOVES`: run, ride, swim, row, ski, squat, deadlift, bench, press, pullup, pushup, plank, wallsit, sledpush, sledpull, bbj, farmers, lunges, wallball. Each has its own props and scene.
+  - The prosthetic follows `S.prosthetic`: the default left below-knee leg is the far leg, drawn as a pylon and socket.
+  - `prefers-reduced-motion` renders a single static frame.
+- **Content:** `COACH[family]` holds 4 cues, 3 mistakes and an adaptive note (shown when a prosthetic is set) for 33 families. `testProtocol(L)` builds protocols per goal: FTP 20 min × 0.95, power tests, CSS (T400 − T200) ÷ 2, run, swim, row and bike TTs, build-ups, 1RM and 5RM ramps (Epley estimate), max reps, holds, and Hyrox station standards with the division weight. Each sheet ends with a "not medical advice" line.
+
+## Bar charts (v3.5)
+- `barChart(series, {target, fmt, invert, unit})` replaces the per-goal line chart; the body-metric history keeps its line chart.
+  - One bar per attempt, normalised by `barScale` so better is always taller (times inverted) with a 35% floor.
+  - PB bars are gold with an SVG glow, and the target is a dashed green line.
+  - Bars grow in with a staggered CSS animation (off under reduced motion).
+  - Tapping a bar shows its date and value in `.bartip`.
+- More than 12 points shows the last 12, plus Last 12 / Weekly / Monthly filters (`R.agg`); weekly and monthly show the best attempt per period.
+- Home `sparkline()` and `metricSpark()` now render `miniBars` (gold for PBs; weight and FTP use weekly values).

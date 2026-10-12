@@ -55,3 +55,6 @@ You can have up to 3 active goals per sport. Picking a 4th asks whether you'd ra
 
 ## Home overview
 The top of Home shows your **Overall** rating: a ring with your level, avatar stage, weekly and monthly change, and what drives the score (Goals 50 · Weight 20 · W/kg 20 · Consistency 10). Tap it for the full breakdown. **How I'm tracking** has one row per goal, plus weight and FTP, coloured green (on track), amber (behind) or red (stalled or no baseline) based on your last 4 weeks. Test: `node /workspace/pwtest/home.js` (screenshots `home-overview*.png`).
+
+## How-to and charts
+Tap **ⓘ** on any goal (in the goal list, the goal page or while logging) to see a looping animation of the movement, key form cues, common mistakes and how to test it properly. Adaptive notes appear when a prosthetic is set. Goal charts are bar charts: taller is better, gold bars are PBs, the dashed line is your target, and you can tap a bar for its value. Test: `node /workspace/pwtest/howto.js` (screenshots `howto-*.png`, `chart-bars-*.png`).
