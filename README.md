@@ -52,3 +52,6 @@ Add Hyrox under Sports. Pick your division (Open/Pro/Adaptive · Men/Women/Doubl
 
 ## Goal cap
 You can have up to 3 active goals per sport. Picking a 4th asks whether you'd rather build up: **Build up instead** saves it to that sport's wishlist, while **Override** adds it anyway and gives up that sport's Earned It badge. Once every goal in a sport has a baseline and 2 weeks have passed, the sport unlocks another slot and suggests your next goal. Test: `node /workspace/pwtest/cap.js` (screenshots `goal-cap-*.png`).
+
+## Home overview
+The top of Home shows your **Overall** rating: a ring with your level, avatar stage, weekly and monthly change, and what drives the score (Goals 50 · Weight 20 · W/kg 20 · Consistency 10). Tap it for the full breakdown. **How I'm tracking** has one row per goal, plus weight and FTP, coloured green (on track), amber (behind) or red (stalled or no baseline) based on your last 4 weeks. Test: `node /workspace/pwtest/home.js` (screenshots `home-overview*.png`).

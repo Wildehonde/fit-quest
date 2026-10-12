@@ -103,3 +103,17 @@ Matt found the v2 metrics too broad, so tracking is now built around **specific 
   - **Override** (secondary) adds the goal with `overridden: true` and sets `S.goalOverride[sp]`, which gives up that sport's **Earned It** badge. It also shows a warning bar, an "over cap" tag on the row and a toast.
 - **Earning slots:** `checkGoalSlots()` runs after `updateBaselines()`. When every active goal in a sport has a baseline and 14 days have passed since the later of the newest goal's start or the last unlock, the sport gets +1 slot. A toast names the next goal, taken from the wishlist first and the catalog after that, and the wishlist chip is marked "next up". The `earned_<sport>` badge is "🔓 Earned It: <Sport>".
 - **Defaults and migration:** the defaults are ≤3 per sport (run 5k/10k/21k, cycle FTP/5-min/100 km, swim 400/CSS/1.9k, strength trap-bar DL, bodyweight pull-ups/plank). The demo has ≤3 per sport, with a wishlist. Saves without `capChecked` keep every goal; goals beyond the 3rd in a sport get `overridden` and the sport is flagged as overridden.
+
+## Home overview (v3.4)
+Home order: greeting → **Log workout** CTA (still first and largest) → Overall hero → How I'm tracking → Baseline week → Today → Last session. The old streak/rating/Iron tiles are gone; streak and Iron already appear under Today, and the rating is now the hero.
+- **Overall hero** (`overallHero`):
+  - The ring shows `overall()` (40–99, tier-coloured), with the level, the avatar stage name and ▲/▼ changes vs the `S.log` ovr from 7 and 30 days ago.
+  - The explanation line comes from `overallParts()`, which uses the same weights as `overall()`: Goals 5, Weight 2, W/kg 2, Consistency 1 → **Goals 50% · Weight 20% · W/kg 20% · Consistency 10%**. With no goals (Simple mode), FTP 2 replaces Goals.
+  - Tapping opens `ovSheet()`: each part's score (`statRating`), bar and share.
+- **How I'm tracking** (`tracking`): the Weight and FTP · W/kg rows come first, then one row per active goal grouped by sport. Each row shows best → target, a progress bar coloured by status, a tiny sparkline and a status.
+  - **Status** (`paceStatus`): gain = progress now − progress 28 days ago, where `progressAt` replays sessions up to that date and the metrics use the `S.log` history. Needed = remaining progress ÷ (4-week blocks left in a 6-month horizon from the goal's start, at least one block).
+    - **On track** (green): gain ≥ 80% of needed, or the goal is done.
+    - **Behind** (amber): some gain, but not enough.
+    - **Stalled** (red): no gain.
+    - **No baseline · Nd** (red): no baseline set yet.
+  - Rows open the goal detail page; the body rows open the athlete card.

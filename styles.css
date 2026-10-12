@@ -280,3 +280,25 @@ table.splits { width: 100%; border-collapse: collapse; font-size: 12.5px; margin
 .wchip.next { border: 1px solid #3ddc84; color: #3ddc84; } .wchip button { background: none; border: 0; color: #777; padding: 0 2px; font-size: 11px; min-height: 0; }
 .capmodal { text-align: center; } .capmodal .capic { font-size: 44px; } .capmodal h2 { margin: 6px 0; } .capmodal p.small, .muted.small { font-size: 12px; margin: 6px 0 14px; }
 .capmodal .ghost { background: transparent; border: 1px solid #3a3f4c; color: #ddd; }
+
+/* ---------- v3.4 Home overview ---------- */
+.ovhero { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; background: linear-gradient(135deg, #1d2130, #12141b); border: 1px solid #2a2e3b; border-radius: 18px; padding: 12px 14px; margin: 12px 0; color: inherit; position: relative; }
+.ring .rbg { fill: none; stroke: #262a36; stroke-width: 9; } .ring .rfg { fill: none; stroke: #ff5a1f; stroke-width: 9; stroke-linecap: round; }
+.ring .rfg.silver { stroke: #c9d1e0; } .ring .rfg.gold { stroke: #ffc52e; } .ring .rfg.elite { stroke: #3ddcff; }
+.ring .rnum { font: 800 34px 'Barlow Condensed', sans-serif; fill: #fff; } .ring .rlbl { font: 700 8.5px Inter, sans-serif; letter-spacing: .12em; fill: #8d93a0; }
+.ovm { flex: 1; min-width: 0; } .ovtop { display: flex; gap: 8px; align-items: baseline; } .ovtop b { font: 800 22px 'Barlow Condensed', sans-serif; color: #ffb020; text-transform: uppercase; }
+.ovtop span { font-size: 13px; font-weight: 600; color: #e6e8ee; }
+.ovdl { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 4px 0 6px; } .dl { font-size: 12px; font-weight: 700; } .dl.up { color: #3ddc84; } .dl.down { color: #ff6b6b; } .dl.flat { color: #8d93a0; }
+.ovwhy { display: block; font-size: 10.5px; color: #8d93a0; line-height: 1.35; } .ovhero .chev { font-style: normal; color: #555c6c; font-size: 22px; }
+.ovparts { display: grid; gap: 10px; margin: 12px 0; } .ovp { display: grid; grid-template-columns: 110px 1fr 34px; gap: 10px; align-items: center; }
+.ovp small { display: block; color: #8d93a0; font-size: 11px; } .ovp .pv { font: 800 22px 'Barlow Condensed', sans-serif; text-align: right; }
+.track h4 { margin: 12px 0 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8d93a0; }
+.trow { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; border-top: 1px solid #22252e; padding: 8px 0; color: inherit; text-align: left; border-radius: 0; min-height: 0; }
+.trow .tm { flex: 1; min-width: 0; } .trow .tt { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.trow .tt b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .trow .tt span { color: #b9bfcc; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12px; }
+.trow .bar { height: 5px; margin-top: 5px; } .trow .ts { width: 66px; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.trow .ts .spark { width: 48px; height: 16px; } .trow .ts em { font-style: normal; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.ts.ok { color: #3ddc84; } .ts.warn { color: #ffb020; } .ts.bad { color: #ff6b6b; }
+.trow:has(.ts.ok) .bar i { background: #3ddc84; } .trow:has(.ts.warn) .bar i { background: #ffb020; } .trow:has(.ts.bad) .bar i { background: #ff6b6b; }
+.track .legend { font-size: 10px; } .d { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 2px 0 6px; } .d.ok { background: #3ddc84; } .d.warn { background: #ffb020; } .d.bad { background: #ff6b6b; }
+.ovhero svg.ring { width: 100px !important; height: 100px !important; flex: none; }

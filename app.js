@@ -924,6 +924,69 @@ function seedSets(id) {
   return L.kind === 'rm' ? [{ reps: L.n, kg: b }] : L.kind === 'reps' ? [{ reps: Math.round(b) }] : L.kind === 'hold' ? [{ sec: b }]
     : L.kind === 'watts' ? [{ watts: Math.round(b / (L.factor || 1)) }] : L.kind === 'far' ? [{ km: b }] : [{ time: b }];
 }
+/* ---------- 10a) HOME OVERVIEW ---------- */
+// Same maths as overall(): each part's 0-1 score and its weight.
+function overallParts(s) {
+  const ag = s.depth === 'detailed' ? activeGoals(s) : [];
+  const parts = [ag.length ? ['goals', 'Goals', ag.reduce((a, g) => a + goalProgress(g), 0) / ag.length, 5] : ['ftp', 'FTP', progress(s.metrics.ftp), 2],
+    ['weight', 'Weight', progress(s.metrics.weight), 2], ['wkg', 'W/kg', wkgProgress(s), 2], ['cons', 'Consistency', clamp01(s.streak / 30), 1]];
+  const W = parts.reduce((a, p) => a + p[3], 0);
+  return parts.map(([k, label, v, w]) => ({ k, label, v, w, share: Math.round(w / W * 100) }));
+}
+function ovrAgo(days) { const d = addDays(today(), -days), e = S.log.filter(x => x.date <= d && x.ovr).at(-1); return e ? e.ovr : null; }
+const delta = (r, then, lbl) => then == null ? `<span class="dl flat">– ${lbl}</span>` : `<span class="dl ${r > then ? 'up' : r < then ? 'down' : 'flat'}">${r > then ? '▲' : r < then ? '▼' : '■'} ${Math.abs(r - then)} ${lbl}</span>`;
+function ring(v, size = 112) {
+  const R0 = 46, C = 2 * Math.PI * R0, f = clamp01((v - 40) / 59);
+  return `<svg viewBox="0 0 110 110" width="${size}" height="${size}" class="ring"><circle cx="55" cy="55" r="${R0}" class="rbg"/><circle cx="55" cy="55" r="${R0}" class="rfg ${tier(v)}" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 55 55)"/>
+    <text x="55" y="60" text-anchor="middle" class="rnum">${v}</text><text x="55" y="77" text-anchor="middle" class="rlbl">OVERALL</text></svg>`;
+}
+function overallHero() {
+  const r = overall(S), L = levelInfo(S.xp), st = AV_STAGES[avStage(r)].name, parts = overallParts(S);
+  return `<button class="ovhero" onclick="ovSheet()">${ring(r)}<div class="ovm"><div class="ovtop"><b>Lv ${L.level}</b><span>${st}</span></div>
+    <div class="ovdl">${delta(r, ovrAgo(7), 'this week')}${delta(r, ovrAgo(30), 'this month')}</div>
+    <small class="ovwhy">${parts.map(p => `${p.label} ${p.share}%`).join(' · ')}</small></div><i class="chev">›</i></button>`;
+}
+window.ovSheet = () => { const r = overall(S), parts = overallParts(S);
+  modal(`<h2>Overall ${r}</h2><p class="muted">Your rating is a weighted mix of these parts, scaled to 40–99. Each bar is that part's progress from your start to your target.</p>
+    <div class="ovparts">${parts.map(p => `<div class="ovp"><div><b>${p.label}</b><small>${p.share}% of rating</small></div><div class="bar"><i style="width:${Math.round(p.v * 100)}%"></i></div><b class="pv">${statRating(p.v)}</b></div>`).join('')}</div>
+    <p class="muted small">Goals = average progress of your active goals (parked goals don't count). Consistency = streak / 30 days.</p>
+    <button class="wide" onclick="closeModal();go('card')">Open athlete card</button>`); };
+// progress as it stood on a past date (sessions after that date hidden)
+function progressAt(g, d) { const keep = S.sessions; S.sessions = keep.filter(x => x.date <= d); try { return goalProgress(g); } finally { S.sessions = keep; } }
+function metricAt(k, d) { const e = S.log.filter(x => x.date <= d).at(-1); return e && e[k] != null ? e[k] : S.metrics[k].base; }
+// on track: progress gained over the last 4 weeks vs what's needed to hit the target within 6 months of starting
+function paceStatus(pNow, p4, startDate, recent) {
+  if (pNow >= 1) return ['ok', 'Done'];
+  const wksLeft = Math.max(4, 26 - daysBetween(startDate, today()) / 7), need = (1 - pNow) / (wksLeft / 4), gain = pNow - p4;
+  if (gain >= need * 0.8) return ['ok', 'On track'];
+  if (gain > 0.005 || (recent && gain >= 0)) return gain > 0.005 ? ['warn', 'Behind'] : ['bad', 'Stalled'];
+  return ['bad', 'Stalled'];
+}
+function goalTrack(g) {
+  if (!g.baselineDate) return ['bad', `No baseline · ${daysLeft(g)}d`];
+  const d4 = addDays(today(), -28), recent = sessionsFor(g.id).some(x => x.date > d4);
+  return paceStatus(goalProgress(g), g.since > d4 ? 0 : progressAt(g, d4), g.since, recent);
+}
+function metricSpark(k, invert) {
+  const p = S.log.slice(-28).map(e => e[k]).filter(v => v != null); if (p.length < 2) return '<svg class="spark" viewBox="0 0 60 20"></svg>';
+  const lo = Math.min(...p), hi = Math.max(...p);
+  return `<svg class="spark" viewBox="0 0 60 20"><path d="${p.map((v, i) => { let t = (v - lo) / ((hi - lo) || 1); if (invert) t = 1 - t; return `${i ? 'L' : 'M'}${(i / (p.length - 1) * 60).toFixed(1)},${(18 - t * 16).toFixed(1)}`; }).join('')}" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+}
+const trow = (name, val, p, [cls, txt], spark, onclick) => `<button class="trow" onclick="${onclick}"><div class="tm"><div class="tt"><b>${name}</b><span>${val}</span></div><div class="bar"><i style="width:${Math.round(clamp01(p) * 100)}%"></i></div></div>
+  <div class="ts ${cls}">${spark}<em>${txt}</em></div></button>`;
+function tracking() {
+  const m = S.metrics, d4 = addDays(today(), -28), start = S.habits.start || today();
+  const wp = progress(m.weight), wp4 = progress({ ...m.weight, current: metricAt('weight', d4) });
+  const fp4 = progress({ base: m.ftp.base / m.weight.base, target: m.ftp.target / m.weight.target, current: metricAt('ftp', d4) / metricAt('weight', d4) });
+  const body = trow('Weight', `${fmtNum(m.weight.current)} → ${m.weight.target} kg`, wp, S.log.length > 1 ? paceStatus(wp, wp4, start, true) : ['bad', 'No data yet'], metricSpark('weight', true), "go('card')")
+    + trow('FTP · W/kg', `${Math.round(m.ftp.current)} W · ${wkg(S).toFixed(2)} → ${(m.ftp.target / m.weight.target).toFixed(2)}`, wkgProgress(S), S.log.length > 1 ? paceStatus(wkgProgress(S), fp4, start, true) : ['bad', 'No data yet'], metricSpark('ftp'), "go('card')");
+  const act = S.depth === 'detailed' ? activeGoals(S) : [], sports = [...new Set(act.map(g => goalDef(g.id).sport))];
+  const goals = sports.map(sp => `<h4>${sportName(sp)}</h4>${act.filter(g => goalDef(g.id).sport === sp).map(g => { const L = goalDef(g.id), b = bestKey(g.id);
+    const val = L.type === 'build' && b == null ? `${fmtNum(longestIn(L.sport))} / ${L.dist} km → ${fmtVal(L, g.target)}` : `${fmtVal(L, b ?? null)} → ${fmtVal(L, g.target)}`;
+    return trow(L.name, val, goalProgress(g), goalTrack(g), sparkline(g.id) || '<svg class="spark" viewBox="0 0 60 20"></svg>', `go('train',{ex:'${g.id}'})`); }).join('')}`).join('');
+  return `<div class="panel track"><div class="ph"><h3>How I'm tracking</h3><small class="muted legend"><i class="d ok"></i>on track <i class="d warn"></i>behind <i class="d bad"></i>stalled</small></div>
+    <h4>⚖️ Body & power</h4>${body}${goals || `<p class="muted">Pick goals to track them here.</p><button class="sm" onclick="go('goals')">+ Add goals</button>`}</div>`;
+}
 VIEWS.home = () => {
   const H = S.habits, rec = H.days[today()] || { done: [] }, hDone = rec.done.filter(d => H.active.includes(d)).length;
   const todays = S.sessions.filter(x => x.date === today()), last = S.sessions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.t - a.t)[0];
@@ -931,7 +994,7 @@ VIEWS.home = () => {
   return `<div class="hello"><small>${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}, ${esc(S.name)}</small><b>${todays.length ? 'Nice work today 💪' : 'Just trained? Log it.'}</b></div>
     ${!S.hintSeen ? `<div class="panel hint"><b>👋 How to use Fit Quest</b><ol><li>Finish a workout, open the app.</li><li>Tap <b>Log workout</b>: pick the goal you attempted (or a general session), nudge the numbers, tick your habits.</li><li>Collect XP, PBs and unlocks. Share if you like.</li></ol><button class="sm" onclick="S.hintSeen=true;save();render()">Got it</button></div>` : ''}
     <button class="cta" onclick="startLog()"><span>＋</span>Log workout<small>${todays.length ? `${todays.length} logged today · add more` : 'About 30 seconds'}</small></button>
-    <div class="tiles"><div class="tile hot"><b>${S.streak}</b><small>day streak 🔥</small></div><div class="tile" onclick="go('card')"><b>${r}</b><small>${tier(r)} rating</small></div><div class="tile" onclick="go('challenge')"><b>${S.challenge.day}<em>/${IRON[S.persona].days}</em></b><small>Iron days</small></div></div>
+    ${overallHero()}${tracking()}
     ${pend.length ? `<div class="panel baseline"><div class="ph"><h3>🎯 Baseline week</h3><small class="muted">${S.goals.filter(g => g.baselineDate).length}/${S.goals.filter(g => g.status === 'active').length} set</small></div>
       ${pend.map(g => `<button class="bl ${daysLeft(g) <= 3 ? 'urgent' : ''}" onclick="startLog('${goalDef(g.id).type === 'build' ? 'session:' + goalDef(g.id).sport : g.id}')"><span>${SPORTS[goalDef(g.id).sport][0]}</span><b>${baselineText(g)}</b><i>${daysLeft(g) <= 3 ? '⚠️' : '›'}</i></button>`).join('')}
       <p class="muted">No baseline in ${BASELINE_DAYS} days parks the goal (kept, but out of your rating). All in time earns 🎯.</p></div>` : ''}
