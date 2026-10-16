@@ -58,3 +58,6 @@ The top of Home shows your **Overall** rating: a ring with your level, avatar st
 
 ## How-to and charts
 Tap **ⓘ** on any goal (in the goal list, the goal page or while logging) to see a looping animation of the movement, key form cues, common mistakes and how to test it properly. Adaptive notes appear when a prosthetic is set. Goal charts are bar charts: taller is better, gold bars are PBs, the dashed line is your target, and you can tap a bar for its value. Test: `node /workspace/pwtest/howto.js` (screenshots `howto-*.png`, `chart-bars-*.png`).
+
+## Offline and install
+Fit Quest works fully offline after the first visit (service worker `sw.js`). On a phone, use **Add to Home Screen** to get a standalone app with its own icon. When you change any app file, bump `VERSION` in `sw.js` so users get the update. Time fields use the number pad: type `2840` for 28:40. Tests: `node /workspace/pwtest/offline.js`, `node /workspace/pwtest/qa.js`.

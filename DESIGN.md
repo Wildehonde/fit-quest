@@ -135,3 +135,18 @@ Home order: greeting → **Log workout** CTA (still first and largest) → Overa
   - Tapping a bar shows its date and value in `.bartip`.
 - More than 12 points shows the last 12, plus Last 12 / Weekly / Monthly filters (`R.agg`); weekly and monthly show the best attempt per period.
 - Home `sparkline()` and `metricSpark()` now render `miniBars` (gold for PBs; weight and FTP use weekly values).
+
+## v3.6 Mobile QA + offline
+**QA pass** (`pwtest/qa.js`): 360×740 and 390×844, fresh and `?demo`, covering every tab, the More sub-tabs, Sports & goals, goal detail, how-to sheet, the log flow (3 steps + reward) and share. It audits overflow, tap targets under 44 px, mm:ss inputs without a numeric inputmode, and console errors. Screenshots are in `screenshots/qa/`. There were no console errors.
+
+Fixes:
+1. **Time fields opened the full text keyboard.** All mm:ss inputs now use `TIN`: `inputmode="numeric" pattern="[0-9:]*"`, select on focus, and the `tmask()` auto-format (2840 → 28:40, 12840 → 1:28:40). `parseTime` reads 3–6 bare digits as [h]mmss; 1–2 digits still mean minutes. Number fields got `inputmode="decimal"`.
+2. **Sport tiles overflowed at 360 px** (the Cycling/Strength column was clipped in onboarding and Sports & goals). The grid now uses `minmax(0,1fr)` columns.
+3. **Tap targets under 44 px:** back/✕ header buttons, More tabs, chips, inputs, range and segment buttons (hit-area pseudo-elements), the wishlist ✕, photo ✕ and checkboxes. Flags went from 790 to 100 across the 4 runs.
+Also: the multi-item kit-unlock toast is now summarised ("🎁 8 avatar kit items unlocked · Settings → Avatar") and capped at 340 px wide.
+
+**Offline / PWA:**
+- `sw.js` (`VERSION = 'fq-v3.6.0'`) precaches index, JS, CSS, fonts, manifest and icons with `cache: 'reload'`, serves cache-first, sends navigations (including `?demo`) to the cached shell, and deletes old `fq-*` caches on activate. **Bump VERSION on every release.**
+- `manifest.webmanifest`: standalone, portrait, dark theme, with 192/512/maskable icons plus apple-touch-icon and favicon in `icons/`.
+- Google Fonts are self-hosted: `fonts.css` plus latin woff2 files in `fonts/` (Barlow Condensed 600/800/900, Inter variable), with system font fallbacks.
+- `pwtest/offline.js` goes online once, then `setOffline(true)` and reloads. It checks that the app renders with data and fonts, that the chart, how-to sheet and log/save work, and that `?demo` loads. Chromium reports no installability errors.

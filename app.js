@@ -356,7 +356,7 @@ function checkBadges() {
   for (const [id, [icon, title, test]] of Object.entries(BADGES)) {
     if (!S.badges.includes(id) && test(S)) { S.badges.push(id); S.lastUnlock = `${icon} ${title}`; if (R.tab !== 'log') setTimeout(() => toast(`${icon} Badge unlocked: ${title}`), 1400); }
   }
-  const kit = syncKit(); if (kit.length) { S.newKit = [...(S.newKit || []), ...kit]; if (R.tab !== 'log') setTimeout(() => toast(`🎁 Avatar kit unlocked: ${kit.join(', ')}`), 2200); }
+  const kit = syncKit(); if (kit.length) { S.newKit = [...(S.newKit || []), ...kit]; if (R.tab !== 'log') setTimeout(() => toast(kit.length > 2 ? `🎁 ${kit.length} avatar kit items unlocked · Settings → Avatar` : `🎁 Avatar kit unlocked: ${kit.join(', ')}`), 2200); }
 }
 function setPersona(p) {
   const prev = S.persona;
@@ -391,7 +391,11 @@ function bestKey(id) { if (id === 'session') return null; const ks = sessionsFor
 const fmtNum = n => (Math.round(n * 10) / 10).toLocaleString('en-US');
 function fmtTime(sec) { sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`; }
 // "25:30" -> 1530 s, "1:02:03" -> 3723 s, a bare number is minutes ("25" -> 1500 s)
-function parseTime(v) { v = String(v).trim(); if (!v) return NaN; if (!v.includes(':')) return Math.round(parseFloat(v) * 60); return v.split(':').reduce((a, p) => a * 60 + (parseFloat(p) || 0), 0); }
+// digits-only entries of 3+ digits are read as [h]mmss (2840 → 28:40); 1–2 digits stay minutes
+const TIN = 'type="text" inputmode="numeric" pattern="[0-9:]*" autocomplete="off" enterkeyhint="done" oninput="tmask(this)" onfocus="this.select()"';
+window.tmask = el => { const d = el.value.replace(/\D/g, '').slice(0, 6); if (d.length < 3) { if (/^\d*$/.test(el.value)) return; el.value = d; return; }
+  el.value = d.length <= 4 ? `${+d.slice(0, -2)}:${d.slice(-2)}` : `${+d.slice(0, -4)}:${d.slice(-4, -2)}:${d.slice(-2)}`; };
+function parseTime(v) { v = String(v).trim(); if (!v) return NaN; if (/^\d{3,6}$/.test(v)) v = v.length <= 4 ? `${v.slice(0, -2)}:${v.slice(-2)}` : `${v.slice(0, -4)}:${v.slice(-4, -2)}:${v.slice(-2)}`; if (!v.includes(':')) return Math.round(parseFloat(v) * 60); return v.split(':').reduce((a, p) => a * 60 + (parseFloat(p) || 0), 0); }
 const isTimeKind = L => L.kind === 'time' || L.kind === 'build' || L.kind === 'race';
 const fmtVal = (L, v) => v == null ? '–' : isTimeKind(L) ? fmtTime(v) : `${fmtNum(v)} ${KINDS[L.kind].unit}`.trim();
 function sessionKm(x) { if (x.exId === 'session') return +(x.sets[0] || {}).km || 0; if (x.sport === 'hyrox') return x.exId === 'hx_race' || x.exId === 'hx_full' ? 16 : x.exId === 'hx_half' ? 8 : 1; const L = goalDef(x.exId); return L.dist || (L.kind === 'far' ? x.key : 0); }
@@ -834,7 +838,7 @@ function goalPicker() {
     return `<h3 class="caph">${sportName(sp)} <span class="capct ${n > cap ? 'over' : n === cap ? 'full' : ''}">Goals ${n}/${cap}</span></h3>${(S.goalOverride || {})[sp] ? `<p class="capwarn">⚠️ Over the cap: ${sportName(sp)} Earned It badge forfeited</p>` : ''}
       ${wish.length ? `<div class="wishrow"><small>📝 Wishlist</small>${wish.map(id => `<span class="wchip ${id === nx ? 'next' : ''}">${goalDef(id).name}${id === nx ? ' · next up' : ''}<button onclick="unwish('${id}')" aria-label="remove">✕</button></span>`).join('')}</div>` : nx ? `<p class="muted small">🔓 Slot free. Suggested next: <b>${goalDef(nx).name}</b></p>` : ''}${sp === 'hyrox' ? hxDivisionPicker() : ''}<div class="chips ${sp === 'hyrox' ? 'hxchips' : ''}">${list.map(L => `<button class="chip btn ${mine(L.id) ? 'on' : ''}" onclick="toggleGoal('${L.id}')">${mine(L.id) ? (mine(L.id).overridden ? '⚠️ ' : '✓ ') : ''}${L.name}${L.type === 'build' ? ' <em>build-up</em>' : ''}</button>`).join('')}</div>
       ${S.goals.filter(g => goalDef(g.id).sport === sp).map(g => { const L = goalDef(g.id);
-        return `<div class="gtgt"><span>${L.name}</span><label>Target <input ${isTimeKind(L) ? 'type="text" inputmode="text" placeholder="mm:ss"' : 'type="number" step="any"'} value="${isTimeKind(L) ? fmtTime(g.target) : g.target}" onchange="setGoalTarget('${g.id}',this.value)"> ${isTimeKind(L) ? '' : KINDS[L.kind].unit}</label></div>`; }).join('')}`; }).join('') || '<p class="muted">Pick at least one sport first.</p>';
+        return `<div class="gtgt"><span>${L.name}</span><label>Target <input ${isTimeKind(L) ? `${TIN} placeholder="mm:ss"` : 'type="number" inputmode="decimal" step="any"'} value="${isTimeKind(L) ? fmtTime(g.target) : g.target}" onchange="setGoalTarget('${g.id}',this.value)"> ${isTimeKind(L) ? '' : KINDS[L.kind].unit}</label></div>`; }).join('')}`; }).join('') || '<p class="muted">Pick at least one sport first.</p>';
 }
 
 const bar = (lbl, v, note, cls = '') => `<div class="metricrow ${cls}"><div class="lbl">${lbl}<small>${note}</small></div>
@@ -1073,7 +1077,7 @@ VIEWS.log = () => {
         const head = id === 'session' ? `<b class="en">⏱️ Training session</b></div><div class="chips">${S.sports.map(k => `<button class="chip btn ${F.sport === k ? 'on' : ''}" onclick="F.sport='${k}';render()">${SPORTS[k][0]} ${SPORTS[k][1]}</button>`).join('')}</div><div>`
           : `<b class="en">${L.name} ${infoBtn(id)}</b><small class="muted">${last ? 'Last ' + fmtVal(L, last.key) : 'Baseline attempt'}${bestKey(id) != null ? ` · PB ${fmtVal(L, bestKey(id))}` : ''}</small>`;
         return `<div class="panel" id="fx-${id}"><div class="ph">${head}</div>
-          ${sets.map((st, i) => `<div class="srow"><span class="sn">${sets.length > 1 ? i + 1 : ''}</span>${KINDS[L.kind].fields.map(([f, lbl, step, opt, typ]) => `<div class="stp"><button onclick="bump('${id}',${i},'${f}',-${step})">−</button><label><input ${typ === 'time' ? 'type="text" placeholder="mm:ss"' : 'type="number" inputmode="decimal" placeholder="–"'} value="${st[f] == null ? '' : typ === 'time' ? fmtTime(st[f]) : st[f]}" onchange="setF('${id}',${i},'${f}',this.value,'${typ || ''}')"><small>${lbl}${opt ? ' (opt.)' : ''}</small></label><button onclick="bump('${id}',${i},'${f}',${step})">+</button></div>`).join('')}
+          ${sets.map((st, i) => `<div class="srow"><span class="sn">${sets.length > 1 ? i + 1 : ''}</span>${KINDS[L.kind].fields.map(([f, lbl, step, opt, typ]) => `<div class="stp"><button onclick="bump('${id}',${i},'${f}',-${step})">−</button><label><input ${typ === 'time' ? `${TIN} placeholder="mm:ss"` : 'type="number" inputmode="decimal" placeholder="–"'} value="${st[f] == null ? '' : typ === 'time' ? fmtTime(st[f]) : st[f]}" onchange="setF('${id}',${i},'${f}',this.value,'${typ || ''}')"><small>${lbl}${opt ? ' (opt.)' : ''}</small></label><button onclick="bump('${id}',${i},'${f}',${step})">+</button></div>`).join('')}
           ${sets.length > 1 ? `<button class="x" onclick="F.sets['${id}'].splice(${i},1);render()">✕</button>` : ''}</div>`).join('')}
           ${multi ? `<button class="link" onclick="F.sets['${id}'].push(structuredClone(F.sets['${id}'].at(-1)));render()">+ add set</button>` : ''}${L.dist ? `<small class="muted">${L.type === 'build' ? 'Finished the full ' : ''}${L.dist} km${L.type === 'build' ? '? Enter your finish time. Shorter build-up runs go in a Training session.' : ''}</small>` : ''}</div>`; }).join('')}
       <div class="dock"><button class="wide" onclick="toStep3()">Next: habits</button></div>`;
@@ -1135,7 +1139,7 @@ function raceSeed() {
 }
 function raceForm() {
   const r = F.race || (F.race = raceSeed()), total = sum(r.runs) + sum(r.st) + (+r.rox || 0), prev = sessionsFor('hx_race').at(-1);
-  const inp = (path, i, v) => `<input type="text" inputmode="text" placeholder="m:ss" value="${v ? fmtTime(v) : ''}" onchange="setRace('${path}',${i},this.value)">`;
+  const inp = (path, i, v) => ` <input ${TIN} placeholder="m:ss" value="${v ? fmtTime(v) : ''}" onchange="setRace('${path}',${i},this.value)">`;
   return `<div class="panel hxpanel"><div class="ph"><b class="en">🟨 Hyrox race</b><small class="muted">${hxDivLabel()}</small></div>
     <p class="muted">${prev ? `Prefilled from ${fmtDate(prev.date)}.` : 'Prefilled from your goal baselines.'} Enter each split as m:ss.</p>
     <div class="racegrid"><span></span><small>Run</small><small>Station</small>
@@ -1260,12 +1264,12 @@ function goalView(id) {
       <div id="sets">${seed.map((s, i) => setRow(L, s, i)).join('')}</div>
       <div class="row">${L.kind === 'rm' ? '<button class="ghost" onclick="addSet()">+ Set</button>' : ''}<button onclick="logSession('${id}')">Save</button></div><div id="cmpout"></div></div>
     ${ss.length ? `<div class="panel"><h3>Attempts</h3>${ss.slice().reverse().slice(0, 12).map(x => `<div class="sess"><b>${fmtDate(x.date)}</b><span>${x.sets.map(s => setText(L, s)).join(' · ')}</span><em>${fmtVal(L, x.key)} ${x.pb ? '🏆' : ''}</em></div>`).join('')}</div>` : ''}
-    <details class="panel"><summary>Edit target</summary><div class="grid2"><div><label>Start</label><input ${tm ? 'type="text"' : 'type="number" step="any"'} value="${tm ? fmtTime(g.base) : g.base}" onchange="setEx('${id}','base',this.value)"></div>
-      <div><label>Target</label><input ${tm ? 'type="text"' : 'type="number" step="any"'} value="${tm ? fmtTime(g.target) : g.target}" onchange="setEx('${id}','target',this.value)"></div></div>
+    <details class="panel"><summary>Edit target</summary><div class="grid2"><div><label>Start</label><input ${tm ? TIN : 'type="number" inputmode="decimal" step="any"'} value="${tm ? fmtTime(g.base) : g.base}" onchange="setEx('${id}','base',this.value)"></div>
+      <div><label>Target</label><input ${tm ? TIN : 'type="number" inputmode="decimal" step="any"'} value="${tm ? fmtTime(g.target) : g.target}" onchange="setEx('${id}','target',this.value)"></div></div>
       <button class="ghost danger" onclick="removeEx('${id}')">Remove goal (attempts are kept)</button></details>`;
 }
 const exerciseView = goalView;
-const setRow = (L, s, i) => `<div class="setrow"><span>${i + 1}</span>${KINDS[L.kind].fields.map(([f, lbl, step, opt, typ]) => `<label><input ${typ === 'time' ? 'type="text" placeholder="mm:ss"' : `type="number" inputmode="decimal" step="${step}" placeholder="0"`} data-f="${f}" data-t="${typ || ''}" value="${s[f] == null ? '' : typ === 'time' ? fmtTime(s[f]) : s[f]}">${lbl}</label>`).join('')}<button class="x" onclick="this.parentNode.remove()">✕</button></div>`;
+const setRow = (L, s, i) => `<div class="setrow"><span>${i + 1}</span>${KINDS[L.kind].fields.map(([f, lbl, step, opt, typ]) => `<label><input ${typ === 'time' ? `${TIN} placeholder="mm:ss"` : `type="number" inputmode="decimal" step="${step}" placeholder="0"`} data-f="${f}" data-t="${typ || ''}" value="${s[f] == null ? '' : typ === 'time' ? fmtTime(s[f]) : s[f]}">${lbl}</label>`).join('')}<button class="x" onclick="this.parentNode.remove()">✕</button></div>`;
 const setText = (L, s) => { const k = L.kind; if (k === 'race') return `race ${fmtTime(s.total)}`; return k === 'rm' ? `${s.reps}×${s.kg}kg` : k === 'reps' ? `${s.reps} reps` : k === 'hold' ? `${s.sec}s` : k === 'watts' ? `${s.watts}W` : k === 'far' ? `${s.km}km` : k === 'session' ? `${s.min} min${s.km ? ` · ${s.km}km` : ''}` : fmtTime(s.time); };
 
 const AFTER = {
@@ -1527,6 +1531,7 @@ async function seedDemo() {
   await loadPhotos(); checkBadges(); save();
 }
 
+if ('serviceWorker' in navigator && location.protocol !== 'file:') addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 (async function boot() {
   if (location.search.includes('demo')) { await seedDemo(); history.replaceState(null, '', location.pathname); }
   await loadPhotos(); applyMissedDays(); updateBaselines(); checkBadges(); save(); render();
