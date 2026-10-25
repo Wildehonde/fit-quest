@@ -18,7 +18,7 @@ v1 saves (`fitquest-v1`) migrate automatically to `fitquest-v2`; the v1 key is k
 ## Goals-based tracking (v3, 12 Oct 2026) ✅ built
 Matt found the v2 metrics too broad, so tracking is now built around **specific benchmark goals** he picks up front.
 - Onboarding: intensity → tracking depth → **sports** (Running, Cycling, Swimming, Rowing, Strength, Bodyweight) → **goals** per sport, each with an optional target (defaults scaled by intensity, times entered as mm:ss) → weight/FTP → habits. Editable later in Settings › Sports & goals or Train › Edit goals.
-- Catalog: Running 400 m, 1 km, 1 mile, 3 km, 5 km, parkrun 5 km, 10 km, 15 km, 21.1 km, 42.2 km, furthest in 30/60 min. Cycling FTP (20-min test, FTP = 95%), 5-min and 1-min power, 10/20/40 km TT, 100 km ride. Swimming 50/100/200/400/750 m, 1.5/1.9/3.8 km, CSS pace. Rowing 500 m, 2 km, 5 km, 10 km erg. Strength 1RM and 5RM for squat, deadlift, trap-bar deadlift, bench, OHP, row, leg press, RDL, hip thrust. Bodyweight max push-ups/pull-ups/chin-ups/dips, plank/side-plank/wall-sit holds.
+- Catalog: Running 400 m, 1 km, 1 mile, 3 km, 5 km, parkrun 5 km, 10 km, 15 km, 21.1 km, 42.2 km, furthest in 30/60 min. Cycling FTP (20-min test, FTP = 95%), 5s peak, 1-min, 5-min and raw 20-min power, 10/20/40 km TT, 100 km ride. Swimming 50/100/200/400/750 m, 1.5/1.9/3.8 km, CSS pace. Rowing 500 m, 2 km, 5 km, 10 km erg. Strength 1RM and 5RM for squat, deadlift, trap-bar deadlift, bench, OHP, row, leg press, RDL, hip thrust. Bodyweight max push-ups/pull-ups/chin-ups/dips, plank/side-plank/wall-sit holds.
 - Logging = pick the goal(s) attempted and enter the result: a time for distances (lower is better), watts for power, kg × reps for lifts (est. 1RM/5RM via Epley), reps or seconds for bodyweight. PBs, history charts (time charts are inverted, so up = faster) and progress are per goal; active goals' average progress is half of the overall rating (with weight, W/kg and consistency). The broad hours/sleep/steps/strength-per-week metrics were dropped from the score (sleep and steps live on as habits).
 - **General training session**: sport + duration (+ optional km). Counts for XP, streak and "trained", no PB.
 - **Two goal types and the 14-day baseline rule**:
@@ -150,3 +150,9 @@ Also: the multi-item kit-unlock toast is now summarised ("🎁 8 avatar kit item
 - `manifest.webmanifest`: standalone, portrait, dark theme, with 192/512/maskable icons plus apple-touch-icon and favicon in `icons/`.
 - Google Fonts are self-hosted: `fonts.css` plus latin woff2 files in `fonts/` (Barlow Condensed 600/800/900, Inter variable), with system font fallbacks.
 - `pwtest/offline.js` goes online once, then `setOffline(true)` and reloads. It checks that the app renders with data and fonts, that the chart, how-to sheet and log/save work, and that `?demo` loads. Chromium reports no installability errors.
+
+## v3.7 Cycling power goals
+- New Test goals (watts, higher = better): `cyc_5s` 5s peak power (base 900 → target 1100 W), `cyc_20min` 20-min power (raw average, 250 → 315 W). `cyc_1min` 1-min power already existed and is kept; FTP (`cyc_ftp`, 20-min × 0.95) is unchanged and separate.
+- They use the standard goal pipeline: 14-day baseline, bar charts with gold PBs and target line, Home tracking rows, goal scoring, 3-per-sport cap.
+- How-to: ride animation and cues, plus dedicated protocols: 5s (warm-up with spin-ups, rolling start, seated or standing kept consistent, best of 2), 1-min, 20-min (trainer after ~20 min warm-up, ERG off, ×0.95 ≈ FTP note).
+- sw.js VERSION fq-v3.7.0.
