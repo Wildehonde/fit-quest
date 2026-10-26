@@ -1014,18 +1014,23 @@ function metricSpark(k, invert) { // weekly values (last ~10 weeks) as mini bars
   const by = new Map(); for (const e of S.log) if (e[k] != null) by.set(weekKey(e.date), e[k]);
   return miniBars([...by.values()], invert);
 }
-const trow = (name, val, p, [cls, txt], spark, onclick) => `<button class="trow" onclick="${onclick}"><div class="tm"><div class="tt"><b>${name}</b><span>${val}</span></div><div class="bar"><i style="width:${Math.round(clamp01(p) * 100)}%"></i></div></div>
-  <div class="ts ${cls}">${spark}<em>${txt}</em></div></button>`;
+// Home tracking row. logId adds a one-tap Log that skips the pick step.
+const trow = (name, val, p, [cls, txt], spark, onclick, logId) => {
+  const body = `<div class="tm"><div class="tt"><b>${name}</b><span>${val}</span></div><div class="bar"><i style="width:${Math.round(clamp01(p) * 100)}%"></i></div></div>
+    <div class="ts ${cls}">${spark}<em>${txt}</em></div>`;
+  if (logId) return `<div class="trow"><button type="button" class="tmain" onclick="${onclick}">${body}</button><button type="button" class="tlog" onclick="startLog('${logId}')">Log</button></div>`;
+  return `<button type="button" class="trow" onclick="${onclick}">${body}</button>`;
+};
 function tracking() {
   const m = S.metrics, d4 = addDays(today(), -28), start = S.habits.start || today();
   const wp = progress(m.weight), wp4 = progress({ ...m.weight, current: metricAt('weight', d4) });
   const fp4 = progress({ base: m.ftp.base / m.weight.base, target: m.ftp.target / m.weight.target, current: metricAt('ftp', d4) / metricAt('weight', d4) });
-  const body = trow('Weight', `${fmtNum(m.weight.current)} → ${m.weight.target} kg`, wp, S.log.length > 1 ? paceStatus(wp, wp4, start, true) : ['bad', 'No data yet'], metricSpark('weight', true), "go('card')")
-    + trow('FTP · W/kg', `${Math.round(m.ftp.current)} W · ${wkg(S).toFixed(2)} → ${(m.ftp.target / m.weight.target).toFixed(2)}`, wkgProgress(S), S.log.length > 1 ? paceStatus(wkgProgress(S), fp4, start, true) : ['bad', 'No data yet'], metricSpark('ftp'), "go('card')");
+  const body = trow('Weight', `${fmtNum(m.weight.current)} → ${m.weight.target} kg`, wp, S.log.length > 1 ? paceStatus(wp, wp4, start, true) : ['bad', 'No data yet'], metricSpark('weight', true), "metricSheet('weight')")
+    + trow('FTP · W/kg', `${Math.round(m.ftp.current)} W · ${wkg(S).toFixed(2)} → ${(m.ftp.target / m.weight.target).toFixed(2)}`, wkgProgress(S), S.log.length > 1 ? paceStatus(wkgProgress(S), fp4, start, true) : ['bad', 'No data yet'], metricSpark('ftp'), "metricSheet('ftp')");
   const act = S.depth === 'detailed' ? activeGoals(S) : [], sports = [...new Set(act.map(g => goalDef(g.id).sport))];
   const goals = sports.map(sp => `<h4>${sportName(sp)}</h4>${act.filter(g => goalDef(g.id).sport === sp).map(g => { const L = goalDef(g.id), b = bestKey(g.id);
     const val = L.type === 'build' && b == null ? `${fmtNum(longestIn(L.sport))} / ${L.dist} km → ${fmtVal(L, g.target)}` : `${fmtVal(L, b ?? null)} → ${fmtVal(L, g.target)}`;
-    return trow(L.name, val, goalProgress(g), goalTrack(g), sparkline(g.id) || '<svg class="spark" viewBox="0 0 60 20"></svg>', `go('train',{ex:'${g.id}'})`); }).join('')}`).join('');
+    return trow(L.name, val, goalProgress(g), goalTrack(g), sparkline(g.id) || '<svg class="spark" viewBox="0 0 60 20"></svg>', `go('train',{ex:'${g.id}'})`, g.id); }).join('')}`).join('');
   return `<div class="panel track"><div class="ph"><h3>How I'm tracking</h3><small class="muted legend"><i class="d ok"></i>on track <i class="d warn"></i>behind <i class="d bad"></i>stalled</small></div>
     <h4>⚖️ Body & power</h4>${body}${goals || `<p class="muted">Pick goals to track them here.</p><button class="sm" onclick="go('goals')">+ Add goals</button>`}</div>`;
 }
@@ -1049,7 +1054,8 @@ VIEWS.home = () => {
 // pre: optional goal id, or 'session:<sport>' to open a general session
 window.startLog = pre => {
   S.newKit = []; F = { step: 1, q: null, sel: [], sets: {}, sport: S.sports[0] || 'run', startXP: S.xp, startBadges: [...S.badges], startSlots: S.habits.slots, startLevel: levelInfo(S.xp).level, startWeight: S.metrics.weight.current };
-  if (pre?.startsWith('session:')) { F.sel = ['session']; F.sport = pre.slice(8); F.q = F.sport; } else if (pre) { F.sel = [pre]; F.q = goalDef(pre).sport; }
+  if (pre?.startsWith('session:')) { F.sel = ['session']; F.sport = pre.slice(8); F.q = F.sport; }
+  else if (pre) { F.sel = [pre]; F.q = goalDef(pre).sport; F.step = 2; } // one-tap Log / baseline test: skip "What did you do?"
   go('log');
 };
 const stepDots = () => `<div class="steps">${[1, 2, 3].map(i => `<i class="${i <= F.step ? 'on' : ''}"></i>`).join('')}</div>`;
@@ -1286,6 +1292,46 @@ window.obFinish = () => { S.onboarded = true; S.modeHistory.push({ date: today()
 window.pickPersona = p => { if (p === S.persona) return; const up = PERSONAS[p].rank > PERSONAS[S.persona].rank; setPersona(p); applyMissedDays(); render(); toast(`${PERSONAS[p].icon} ${PERSONAS[p].name} mode${up ? ' · moved up!' : ''}`); };
 window.pickDepth = d => { S.depth = d; save(); render(); toast(`Tracking: ${DEPTHS[d].name}`); };
 window.setMetric = (k, f, v) => { S.metrics[k][f] = parseFloat(v); save(); };
+
+// Quick Weight / FTP sheet from Home › How I'm tracking (body metrics, not Bodyweight sport)
+let Q = null;
+window.metricSheet = k => {
+  const m = S.metrics[k], isW = k === 'weight', unit = isW ? 'kg' : 'W', step = isW ? 0.1 : 1;
+  Q = { k, v: m.current, start: m.current };
+  modal(`<div class="qmetric"><h2>${isW ? '⚖️ Weigh-in' : '🚴 Update FTP'}</h2>
+    <p class="muted">Target ${isW ? fmtNum(m.target) + ' kg' : Math.round(m.target) + ' W'}${isW ? '' : ` · current W/kg ${wkg(S).toFixed(2)}`}</p>
+    <div class="stp big"><button type="button" onclick="bumpQ(-${step})">−</button>
+      <label><input type="number" id="q-v" inputmode="decimal" step="${step}" value="${isW ? m.current : Math.round(m.current)}" onchange="Q.v=parseFloat(this.value)"><small>${unit}</small></label>
+      <button type="button" onclick="bumpQ(${step})">+</button></div>
+    <button class="wide" onclick="saveMetric()">Save</button>
+    <button class="wide ghost" onclick="closeModal()">Cancel</button></div>`);
+};
+window.bumpQ = d => {
+  if (!Q) return;
+  Q.v = Math.max(0, Math.round(((+Q.v || 0) + d) * 10) / 10);
+  const inp = $('#q-v'); if (inp) inp.value = Q.k === 'weight' ? Q.v : Math.round(Q.v);
+};
+window.saveMetric = () => {
+  if (!Q) return;
+  const inp = $('#q-v'), raw = inp ? parseFloat(inp.value) : Q.v;
+  if (!(raw > 0)) return toast('Enter a value', true);
+  const k = Q.k, start = Q.start, v = k === 'weight' ? raw : Math.round(raw);
+  if (v === start) { closeModal(); return toast('No change'); }
+  if (k === 'weight') {
+    const lowest = v < Math.min(start, ...S.log.map(e => e.weight));
+    S.metrics.weight.current = v;
+    addXP(XP.weighin, 'weigh-in', true);
+    if (lowest) { S.pbCount++; addXP(XP.pb, 'PB', true); pbMoment(`${fmtNum(v)} kg`, 'Lowest weight'); }
+    toast(`⚖️ ${fmtNum(v)} kg logged`, true);
+  } else {
+    const highest = v > Math.max(start, ...S.log.map(e => e.ftp));
+    S.metrics.ftp.current = v;
+    if (highest) { S.pbCount++; addXP(XP.pb, 'NEW PB!', true); pbMoment(`FTP ${v} W`, 'New FTP'); }
+    toast(`🚴 FTP ${v} W`, true);
+  }
+  markActiveDay(); logPoint(); checkBadges(); save(); Q = null; closeModal();
+  if (R.tab === 'home') render(); else go('home');
+};
 
 window.doCheckin = () => {
   const m = S.metrics, num = k => parseFloat($('#in-' + k).value);

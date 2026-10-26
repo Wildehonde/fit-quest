@@ -293,14 +293,18 @@ table.splits { width: 100%; border-collapse: collapse; font-size: 12.5px; margin
 .ovparts { display: grid; gap: 10px; margin: 12px 0; } .ovp { display: grid; grid-template-columns: 110px 1fr 34px; gap: 10px; align-items: center; }
 .ovp small { display: block; color: #8d93a0; font-size: 11px; } .ovp .pv { font: 800 22px 'Barlow Condensed', sans-serif; text-align: right; }
 .track h4 { margin: 12px 0 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8d93a0; }
-.trow { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; border-top: 1px solid #22252e; padding: 8px 0; color: inherit; text-align: left; border-radius: 0; min-height: 0; }
+.trow { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; border-top: 1px solid #22252e; padding: 8px 0; color: inherit; text-align: left; border-radius: 0; min-height: 0; }
+.trow .tmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; background: none; border: 0; color: inherit; text-align: left; padding: 0; border-radius: 0; min-height: 44px; }
 .trow .tm { flex: 1; min-width: 0; } .trow .tt { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
 .trow .tt b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .trow .tt span { color: #b9bfcc; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12px; }
-.trow .bar { height: 5px; margin-top: 5px; } .trow .ts { width: 66px; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.trow .bar { height: 5px; margin-top: 5px; } .trow .ts { width: 66px; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex: none; }
 .trow .ts .spark { width: 48px; height: 16px; } .trow .ts em { font-style: normal; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.tlog { flex: none; min-width: 52px; min-height: 44px; padding: 0 12px; border-radius: 12px; background: rgba(255,90,31,.14); color: var(--acc); border: 1px solid rgba(255,90,31,.35); font: 800 13px Inter,sans-serif; letter-spacing: .02em; }
+.tlog:active { background: var(--acc); color: #fff; }
 .ts.ok { color: #3ddc84; } .ts.warn { color: #ffb020; } .ts.bad { color: #ff6b6b; }
 .trow:has(.ts.ok) .bar i { background: #3ddc84; } .trow:has(.ts.warn) .bar i { background: #ffb020; } .trow:has(.ts.bad) .bar i { background: #ff6b6b; }
 .track .legend { font-size: 10px; } .d { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 2px 0 6px; } .d.ok { background: #3ddc84; } .d.warn { background: #ffb020; } .d.bad { background: #ff6b6b; }
+.qmetric .stp.big { margin: 18px 0 22px; } .qmetric .stp.big input { font-size: 36px; } .qmetric h2 { margin-right: 36px; }
 .ovhero svg.ring { width: 100px !important; height: 100px !important; flex: none; }
 
 /* ---------- v3.5 How-to sheets ---------- */

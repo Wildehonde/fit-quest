@@ -156,3 +156,10 @@ Also: the multi-item kit-unlock toast is now summarised ("🎁 8 avatar kit item
 - They use the standard goal pipeline: 14-day baseline, bar charts with gold PBs and target line, Home tracking rows, goal scoring, 3-per-sport cap.
 - How-to: ride animation and cues, plus dedicated protocols: 5s (warm-up with spin-ups, rolling start, seated or standing kept consistent, best of 2), 1-min, 20-min (trainer after ~20 min warm-up, ERG off, ×0.95 ≈ FTP note).
 - sw.js VERSION fq-v3.7.0.
+
+## v3.8 Simpler logging
+Matt found logging a single result and updating body weight unintuitive during his cycling block.
+- **Home › Weight** opens a weigh-in sheet (big kg stepper + Save), not the athlete card. Save updates `S.metrics.weight.current`, awards weigh-in XP (and PB XP on a new lowest), `logPoint()`, toast, back to Home. Same pattern for **FTP · W/kg** → watts update sheet (PB XP on a new high). Body Weight (kg metric) is separate from the Bodyweight sport.
+- **One-tap Log** on each Home goal tracking row calls `startLog(goalId)` and skips straight to step 2 (Your results) with that goal selected. Row tap still opens goal detail. Baseline-week buttons for specific test goals also skip to step 2; `session:<sport>` build-ups still open step 1 with the session pre-selected.
+- **Log workout** CTA is unchanged: full pick → results → habits → XP flow. Goal detail "Log an attempt" is unchanged.
+- sw.js VERSION fq-v3.8.0.

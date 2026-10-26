@@ -1,5 +1,5 @@
 /* Fit Quest service worker: precache the app shell, serve cache-first, bust by bumping VERSION. */
-const VERSION = 'fq-v3.7.0';
+const VERSION = 'fq-v3.8.0';
 const ASSETS = ['./', 'index.html', 'styles.css', 'fonts.css', 'app.js', 'howto.js', 'manifest.webmanifest',
   'fonts/BarlowCondensed-600.woff2', 'fonts/BarlowCondensed-800.woff2', 'fonts/BarlowCondensed-900.woff2', 'fonts/Inter-var.woff2',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
