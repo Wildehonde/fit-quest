@@ -197,7 +197,8 @@ function freshState() {
     sports: [...DEFAULT_SPORTS], goals: seedGoals(), everParked: false, sessions: [], pbCount: 0,
     habits: { active: HABITS.filter(h => h.core).map(h => h.id), slots: 3, earnedSlots: 0, wishlist: [], paused: [],
       days: {}, start: today(), evaluatedTo: null, weakWeeks: 0, override: false, weekLog: [] },
-    photoCount: 0, photoWeeks: 0, share: { weight: false, photo: false }, prosthetic: 'left', goalSlots: {}, goalSlotAt: {}, goalWish: {}, goalOverride: {}, capChecked: true }; // Matt: LEFT below-knee prosthetic
+    photoCount: 0, photoWeeks: 0, share: { weight: false, photo: false }, prosthetic: 'left', goalSlots: {}, goalSlotAt: {}, goalWish: {}, goalOverride: {}, capChecked: true, // Matt: LEFT below-knee prosthetic
+    avatarEnergy: { date: null, value: 0, logs: 0 }, ride: { date: null, pending: null, claimed: null, flairDate: null } };
 }
 // Fill any missing fields from a fresh state (v1 data, v2 exercise data, older v3 saves).
 function migrate(old) {
@@ -215,6 +216,8 @@ function migrate(old) {
   }
   if (old.exercises && !old.goals) migrateExercises(out, old); // v2 exercises -> v3 goals
   delete out.exercises;
+  out.avatarEnergy = energyShape(old.avatarEnergy);
+  out.ride = rideShape(old.ride);
   if (!old.capChecked) { // saves from before the cap keep their goals, marked as overridden
     out.capChecked = true; const by = {};
     for (const g of out.goals) { if (g.status !== 'active') continue; const sp = goalDef(g.id).sport; by[sp] = (by[sp] || 0) + 1; if (by[sp] > GOAL_CAP) { g.overridden = true; out.goalOverride = { ...out.goalOverride, [sp]: true }; } }
@@ -745,8 +748,9 @@ function avatarSVG(o = {}) {
       <circle cx="30" cy="244" r="20" fill="none" stroke="#9aa3b8" stroke-width="1" stroke-dasharray="2 5"/><circle cx="170" cy="244" r="20" fill="none" stroke="#9aa3b8" stroke-width="1" stroke-dasharray="2 5"/>
       <path d="M30,244 L62,212 L150,212 L170,244 M62,212 L80,244 L150,212 M150,212 L146,198 L160,196" stroke="#ff5a1f" stroke-width="5" fill="none" stroke-linejoin="round" stroke-linecap="round"/><rect x="54" y="204" width="20" height="5" rx="2.5" fill="#1b1d22"/></g>` : '';
   const confetti = o.mood === 'celebrate' && !o.static ? [...Array(14)].map((_, i) => `<rect class="cf" x="${20 + (i * 37) % 160}" y="-10" width="6" height="10" rx="1.5" fill="${['#ff5a1f', '#ffb020', '#2ee59d', '#5aa9ff', '#ff3df2'][i % 5]}" style="animation-delay:${(i % 7) * 0.13}s;--dx:${(i % 2 ? 1 : -1) * (6 + i % 5 * 3)}px"/>`).join('') : '';
-  return `<svg class="av ${o.mood || 'idle'} ${o.static ? 'static' : ''}" viewBox="0 0 200 280" ${o.size ? `width="${o.size * 200 / 280}" height="${o.size}"` : ''} xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Avatar, ${st.name}">
-    <ellipse class="shadow" cx="100" cy="268" rx="50" ry="7" fill="#000" opacity=".25"/>${bike}
+  const speed = o.mood === 'ride' && !o.static ? `<g class="speed">${[150, 172, 194, 216].map((y, i) => `<path d="M6,${y} h${14 + (i % 2) * 12}" stroke="#ff5a1f" stroke-width="2.5" stroke-linecap="round" opacity=".8" style="animation-delay:${i * 0.07}s"/>`).join('')}</g>` : '';
+  return `<svg class="av ${o.mood || 'idle'} ${o.static ? 'static' : ''}" viewBox="0 0 200 280" ${o.size ? `width="${o.size * 200 / 280}" height="${o.size}"` : ''} xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Avatar, ${st.name}${o.mood === 'ride' ? ', on a ride' : ''}">
+    <ellipse class="shadow" cx="100" cy="268" rx="50" ry="7" fill="#000" opacity=".25"/>${speed}${bike}
     <g class="body"><g ${T('legs', legT(fr), legT(st), '100px 230px')}>${legs}</g>
       <path d="M78,192 h44 v14 a5,5 0 0 1 -5,5 h-12 l-5,-6 l-5,6 h-12 a5,5 0 0 1 -5,-5 z" fill="${shorts}"/>
       ${arm(64, 'r')}${arm(123, 'l')}
@@ -769,8 +773,79 @@ function settleAvatars() {
   requestAnimationFrame(() => setTimeout(() => els.forEach(e => { e.style.transform = e.dataset.to; }), 60));
   const cur = avStage(overall(S)); if (S.avShown !== cur) { S.avShown = cur; save(); }
 }
+/* ---------- 9c) DAILY ENERGY (avatar ride loop, phone-local) ---------- */
+const ENERGY_XP = 25; // base; persona multiplier applies on claim
+function energyShape(raw) {
+  const e = raw && typeof raw === 'object' ? raw : {};
+  return { date: typeof e.date === 'string' ? e.date : null, value: Math.max(0, Math.min(100, Math.round(+e.value) || 0)), logs: Math.max(0, e.logs | 0) };
+}
+function rideShape(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  const day = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+  return { date: day(r.date), pending: day(r.pending), claimed: day(r.claimed), flairDate: day(r.flairDate) };
+}
+// Roll the bar at midnight. A ride finished yesterday leaves a claim; older rides just expire. No XP penalty.
+function syncEnergyDay() {
+  S.avatarEnergy = energyShape(S.avatarEnergy); S.ride = rideShape(S.ride);
+  const t = today(); if (S.avatarEnergy.date === t) return false;
+  const y = addDays(t, -1);
+  if (S.ride.date === y && S.ride.claimed !== y) S.ride.pending = y;
+  else if (S.ride.pending && S.ride.pending !== y) S.ride.pending = null;
+  S.avatarEnergy = { date: t, value: 0, logs: 0 };
+  return true;
+}
+function isRiding() { return !!(S.ride && S.avatarEnergy && S.ride.date === today() && S.avatarEnergy.value >= 100 && S.avatarEnergy.date === today()); }
+function sessionIsBig(cur) {
+  if (!cur) return false;
+  if (cur.exId === 'hx_race') return true;
+  return (cur.sets || []).reduce((a, st) => a + (+st.min || 0), 0) >= 45;
+}
+// One call per workout log (finish-log or the goal screen), not per goal inside that log.
+function grantWorkoutEnergy(sessions) {
+  syncEnergyDay();
+  const list = [].concat(sessions || []);
+  const n = S.avatarEnergy.logs || 0;
+  const big = n === 0 && list.some(sessionIsBig);
+  const before = S.avatarEnergy.value;
+  S.avatarEnergy.logs = n + 1;
+  S.avatarEnergy.value = Math.min(100, before + (big ? 100 : n === 0 ? 60 : 40));
+  const started = before < 100 && S.avatarEnergy.value >= 100;
+  if (started) S.ride.date = today();
+  return { add: S.avatarEnergy.value - before, value: S.avatarEnergy.value, started, big };
+}
+function energyNote(e) { return e.started ? '⚡ Energy full · on a ride' : `⚡ Energy ${e.value}/100`; }
+let energySheetShown = false;
+function maybeEnergyReward() {
+  if (!S.onboarded || R.tab !== 'home' || !S.ride?.pending || energySheetShown) return;
+  energySheetShown = true; setTimeout(() => { if (S.ride?.pending && R.tab === 'home') openEnergyReward(); }, 280);
+}
+window.openEnergyReward = () => {
+  if (!S.ride?.pending) return;
+  const xp = Math.round(ENERGY_XP * (PERSONAS[S.persona || 'athlete'].xpMult));
+  modal(`<div class="energyreward"><div class="rav">${avatarSVG({ mood: 'celebrate', size: 168 })}</div>
+    <h2>Back from the ride</h2>
+    <p class="muted">Your avatar finished yesterday's ride. Claim a small bonus. It stays on this phone. Skipping a day just starts the bar empty.</p>
+    <div class="tiles"><div class="tile"><b>+${xp}</b><small>XP</small></div><div class="tile"><b>⚡</b><small>glow today</small></div></div>
+    <button class="wide" onclick="claimEnergyReward()">Claim</button></div>`);
+};
+window.claimEnergyReward = () => {
+  if (!S.ride?.pending) return closeModal();
+  const day = S.ride.pending;
+  S.ride.claimed = day; S.ride.pending = null; S.ride.flairDate = today();
+  const gained = addXP(ENERGY_XP, 'ride bonus', true);
+  save(); closeModal(); render(); toast(`⚡ Ride bonus +${gained} XP`);
+};
+function energyPanel() {
+  const v = S.avatarEnergy.value, riding = isRiding(), flair = S.ride.flairDate === today();
+  const sub = riding ? 'On a ride' : v <= 0 ? 'Log a workout to charge up' : `${100 - v} to a ride`;
+  return `<div class="energy ${riding ? 'riding' : ''} ${flair ? 'flair' : ''}"><div class="eav">${avatarSVG({ mood: riding ? 'ride' : avMood(), size: 112 })}</div>
+    <div class="emeta"><div class="elbl"><b>ENERGY${flair ? ' ⚡' : ''}</b><span>${v}</span></div>
+    <div class="bar"><i style="width:${v}%"></i></div><small>${sub}</small></div></div>
+    ${S.ride.pending ? `<button type="button" class="energyclaim" onclick="openEnergyReward()">🎁 Ride reward waiting</button>` : ''}`;
+}
 function avMood() {
   if (S.celebrateUntil && Date.now() < S.celebrateUntil) return 'celebrate';
+  if (isRiding()) return 'ride';
   if (S.slumpDate === today() && !S.sessions.some(x => x.date === today())) return 'slump';
   return 'idle';
 }
@@ -789,6 +864,7 @@ function go(tab, extra = {}) { Object.assign(R, { tab, ex: null }, extra); rende
 window.go = go;
 
 function render() {
+  if (syncEnergyDay()) save();
   const on = S.onboarded;
   $('#nav').style.display = on ? 'flex' : 'none';
   document.querySelector('#nav [data-tab="train"]').style.display = S.depth === 'detailed' ? '' : 'none';
@@ -796,7 +872,7 @@ function render() {
   const li = levelInfo(S.xp);
   $('#levelbox').innerHTML = on ? `<div class="lvl"><b>LV ${li.level}</b><span>${S.xp.toLocaleString()} XP</span></div><div class="xpbar"><i style="width:${li.pct}%"></i></div><small>${li.toNext} XP to LV ${li.level + 1}</small>` : '';
   $('#view').innerHTML = on ? VIEWS[R.tab]() : onboarding();
-  AFTER[R.tab]?.(); settleAvatars();
+  AFTER[R.tab]?.(); settleAvatars(); maybeEnergyReward();
 }
 
 function modePicker(sel, fn) {
@@ -1041,7 +1117,7 @@ VIEWS.home = () => {
   return `<div class="hello"><small>${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}, ${esc(S.name)}</small><b>${todays.length ? 'Nice work today 💪' : 'Just trained? Log it.'}</b></div>
     ${!S.hintSeen ? `<div class="panel hint"><b>👋 How to use Fit Quest</b><ol><li>Finish a workout, open the app.</li><li>Tap <b>Log workout</b>: pick the goal you attempted (or a general session), nudge the numbers, tick your habits.</li><li>Collect XP, PBs and unlocks. Share if you like.</li></ol><button class="sm" onclick="S.hintSeen=true;save();render()">Got it</button></div>` : ''}
     <button class="cta" onclick="startLog()"><span>＋</span>Log workout<small>${todays.length ? `${todays.length} logged today · add more` : 'About 30 seconds'}</small></button>
-    ${overallHero()}${tracking()}
+    ${energyPanel()}${overallHero()}${tracking()}
     ${pend.length ? `<div class="panel baseline"><div class="ph"><h3>🎯 Baseline week</h3><small class="muted">${S.goals.filter(g => g.baselineDate).length}/${S.goals.filter(g => g.status === 'active').length} set</small></div>
       ${pend.map(g => `<button class="bl ${daysLeft(g) <= 3 ? 'urgent' : ''}" onclick="startLog('${goalDef(g.id).type === 'build' ? 'session:' + goalDef(g.id).sport : g.id}')"><span>${SPORTS[goalDef(g.id).sport][0]}</span><b>${baselineText(g)}</b><i>${daysLeft(g) <= 3 ? '⚠️' : '›'}</i></button>`).join('')}
       <p class="muted">No baseline in ${BASELINE_DAYS} days parks the goal (kept, but out of your rating). All in time earns 🎯.</p></div>` : ''}
@@ -1100,6 +1176,7 @@ VIEWS.log = () => {
   }
   const gained = S.xp - F.startXP, li = levelInfo(S.xp), newB = S.badges.filter(b => !F.startBadges.includes(b));
   return `<div class="reward"><div class="burst sm"></div><div class="rav">${avatarSVG({ mood: 'celebrate', size: 190 })}</div><small>WORKOUT LOGGED</small><div class="xpbig">+${gained}<span>XP</span></div>
+      ${F.energy ? `<div class="enote">${energyNote(F.energy)}</div>` : ''}
       ${li.level > F.startLevel ? `<div class="lvup">LEVEL UP · LV ${li.level}</div>` : `<div class="muted">Level ${li.level} · ${li.toNext} XP to go</div>`}
       <div class="xpbar"><i style="width:${li.pct}%"></i></div></div>
     <div class="tiles"><div class="tile hot"><b>${S.streak}</b><small>day streak 🔥</small></div><div class="tile"><b>${F.res.filter(x => x.cur.pb).length}</b><small>PBs today</small></div><div class="tile"><b>${overall(S)}</b><small>rating</small></div></div>
@@ -1132,6 +1209,7 @@ window.finishLog = () => {
   const H = S.habits, rec = H.days[today()];
   if (H.active.includes('trained') && !(rec && rec.done.includes('trained'))) tickHabit('trained', true);
   updateBaselines(); F.newBaselines = S.goals.filter(g => g.baselineDate && !before.has(g.id)).map(g => g.id);
+  F.energy = grantWorkoutEnergy(F.res.map(x => x.cur));
   checkBadges(); save(); F.step = 4; render(); scrollTo(0, 0);
   const p = F.res.find(x => x.cur.pb)?.cur; if (p) pbMoment(fmtVal(goalDef(p.exId), p.key), goalDef(p.exId).name);
 };
@@ -1415,7 +1493,8 @@ const readRow = r => Object.fromEntries([...r.querySelectorAll('input')].map(i =
 window.logSession = id => {
   const L = goalDef(id), sets = cleanSets(L, [...document.querySelectorAll('#sets .setrow')].map(readRow));
   if (!sets.length) return toast('Enter a complete result');
-  const { prev, cur } = saveSession(id, sets, false); updateBaselines(); checkBadges(); save(); render();
+  const { prev, cur } = saveSession(id, sets, false); const energy = grantWorkoutEnergy(cur); updateBaselines(); checkBadges(); save(); render();
+  setTimeout(() => toast(energyNote(energy), true), 1600);
   $('#cmpout').innerHTML = `<div class="cmp">${prev ? `<small>vs ${fmtDate(prev.date)}</small>` : ''}${compare(prev, cur, L).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div>`;
 };
 // Core save used by the goal screen and the post-workout flow. quiet = no toasts/PB overlay.
@@ -1560,6 +1639,9 @@ async function seedDemo() {
   S.goalWish = { cycle: ['cyc_5min'], hyrox: ['hx_rox', 'hx_wb'], strength: ['str_bench_1'] };
   S.habits.wishlist = [{ id: 'w_acv', label: 'Apple cider vinegar' }, { id: 'w_multi', label: 'Multivitamin' }];
   S.upgraded = false; S.hintSeen = true; checkBadges();
+  const yest = addDays(today(), -1);
+  S.avatarEnergy = { date: today(), value: 60, logs: 1 };
+  S.ride = { date: yest, pending: yest, claimed: null, flairDate: null };
   try { await new Promise(r => { const q = indexedDB.deleteDatabase('fitquest-photos'); q.onsuccess = q.onerror = q.onblocked = r; }); idb.db = null; } catch (e) {}
   for (let w = 0; w < 8; w++) for (const pose of POSES) {
     const c = document.createElement('canvas'); c.width = 600; c.height = 800; const g = c.getContext('2d');

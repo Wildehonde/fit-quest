@@ -220,7 +220,32 @@ svg.av.slump{filter:saturate(.55)}
 svg.av .tear{animation:avTear 2.4s ease-in infinite}
 @keyframes avSlumpHead{0%,100%{transform:translateY(6px) rotate(-7deg)}50%{transform:translateY(8px) rotate(-5deg)}}
 @keyframes avTear{0%{transform:translateY(0);opacity:0}20%{opacity:1}100%{transform:translateY(22px);opacity:0}}
+/* ride: energy bar full, avatar out on the bike. Legs (including the left prosthetic) stay as drawn. */
+svg.av.ride .head{animation:avRideHead .55s ease-in-out infinite}
+svg.av.ride .body{animation:avRideBody .55s ease-in-out infinite}
+svg.av.ride .shadow{animation:avRideShadow .55s ease-in-out infinite}
+svg.av.ride .speed path{animation:avSpeed .55s linear infinite}
+svg.av.ride .bike{animation:avRideBody .55s ease-in-out infinite}
+@keyframes avRideHead{0%,100%{transform:translate(1px,-1px) rotate(-7deg)}50%{transform:translate(0,-5px) rotate(-4deg)}}
+@keyframes avRideBody{0%,100%{transform:rotate(-5deg) translateY(0)}50%{transform:rotate(-2deg) translateY(-3px)}}
+@keyframes avRideShadow{0%,100%{transform:scaleX(.9);opacity:.2}50%{transform:scaleX(.75);opacity:.12}}
+@keyframes avSpeed{0%{transform:translateX(8px);opacity:.85}100%{transform:translateX(-18px);opacity:0}}
 svg.av.static *{animation:none!important}
+.energy{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#1d2130,#12141b);border:1px solid #2a2e3b;border-radius:18px;padding:8px 14px 8px 8px;margin:0 0 12px}
+.energy .eav{width:84px;flex:none}
+.energy .eav svg{width:100%;height:auto;display:block}
+.energy .emeta{flex:1;min-width:0}
+.energy .elbl{display:flex;justify-content:space-between;align-items:baseline;font:800 20px var(--cond);letter-spacing:1.2px}
+.energy .elbl span{color:var(--acc2);font-variant-numeric:tabular-nums}
+.energy .bar{height:8px;margin:6px 0 4px;flex:none}
+.energy .bar i{background:linear-gradient(90deg,var(--acc),var(--acc2))}
+.energy small{color:var(--muted);font-size:12px;font-weight:700}
+.energy.riding{border-color:rgba(255,90,31,.55);box-shadow:0 0 0 3px rgba(255,90,31,.12)}
+.energy.riding small{color:var(--acc);letter-spacing:.06em;text-transform:uppercase}
+.energy.flair{box-shadow:0 0 0 3px rgba(255,176,32,.22),0 0 22px rgba(255,90,31,.28)}
+.energyclaim{width:100%;margin:-4px 0 12px;background:rgba(255,176,32,.12);color:var(--acc2);border:1px solid rgba(255,176,32,.45)}
+.enote{position:relative;font:800 16px var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--acc2);margin-top:6px}
+.energyreward{text-align:center}.energyreward h2{margin:4px 0 8px}.energyreward .tiles{margin:12px 0 4px}
 .rav{position:relative;display:flex;justify-content:center;margin-bottom:-6px}
 .avprev{display:flex;justify-content:center;background:radial-gradient(circle at 50% 60%,#2a3150,var(--panel2) 70%);border-radius:14px;margin-bottom:10px;padding:6px}
 .avedit label{margin:10px 0 6px}

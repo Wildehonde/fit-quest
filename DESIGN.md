@@ -163,3 +163,13 @@ Matt found logging a single result and updating body weight unintuitive during h
 - **One-tap Log** on each Home goal tracking row calls `startLog(goalId)` and skips straight to step 2 (Your results) with that goal selected. Row tap still opens goal detail. Baseline-week buttons for specific test goals also skip to step 2; `session:<sport>` build-ups still open step 1 with the session pre-selected.
 - **Log workout** CTA is unchanged: full pick → results → habits → XP flow. Goal detail "Log an attempt" is unchanged.
 - sw.js VERSION fq-v3.8.0.
+
+## v3.9 Avatar daily energy ✅ built
+A reason to open the app tomorrow. Phone-local only (`S.avatarEnergy`, `S.ride` on the existing `fitquest-v2` save). Old saves pick up an empty bar; nothing else is rewritten.
+
+- **Bar** (0–100) sits on Home with the bobblehead, next to the overall hero. It starts empty each calendar day (`today()`, same local date the rest of the app uses).
+- **Logging fills it.** The post-workout finish and a goal-screen save each count as one log. First log of the day is **+60**. A second log is **+40**, which fills the bar. A single log fills it in one go when it is a Hyrox race or a training session of **45 minutes or more**. Further logs stay capped at 100. Habits, weigh-ins, and the Home weight/FTP sheets do not charge the bar.
+- **Full bar → ride.** Hitting 100 sets `S.ride.date` to today and the avatar uses a ride pose (forward lean, speed lines, “On a ride”). No extra log is required. The LEFT below-knee prosthetic is unchanged.
+- **Next morning.** If that ride was yesterday and the bonus is unclaimed, Home opens a claim sheet (also a banner if the sheet is closed). Claim grants **+25 XP** (mode multiplier applies, same as other XP) and a one-day ⚡ glow on the energy card. Claiming clears it. Skipping a day only leaves the bar empty — this loop does not take XP or break a streak.
+- **Demo** (`?demo`) opens with yesterday’s ride ready to claim and today’s bar at 60, so a single extra log sends the avatar riding.
+- sw.js VERSION fq-v3.9.0.
