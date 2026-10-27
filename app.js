@@ -10,7 +10,7 @@
 const STORE_KEY = 'fitquest-v2';
 const V1_KEY = 'fitquest-v1';
 // PostHog project API key. Leave empty until one is provided (no requests, analytics stays a no-op).
-const POSTHOG_KEY = '';
+const POSTHOG_KEY = 'phc_spLv9jHXDyrYhNC9maip7nD4NRbsscwuxytPoKdyE8Xs';
 const POSTHOG_HOST = 'https://us.i.posthog.com';
 
 const PERSONAS = {
