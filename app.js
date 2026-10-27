@@ -9,6 +9,9 @@
 /* ---------- 1) CONFIG ---------- */
 const STORE_KEY = 'fitquest-v2';
 const V1_KEY = 'fitquest-v1';
+// PostHog project API key. Leave empty until one is provided (no requests, analytics stays a no-op).
+const POSTHOG_KEY = '';
+const POSTHOG_HOST = 'https://us.i.posthog.com';
 
 const PERSONAS = {
   beginner: { rank: 1, name: 'Beginner', icon: '🌱', xpMult: 1.0, missPenalty: 0, streakBreaks: false, targetMult: 0.6,
@@ -190,14 +193,14 @@ function newGoal(id, persona) {
 }
 const seedGoals = persona => DEFAULT_GOALS.map(id => newGoal(id, persona));
 function freshState() {
-  return { version: 3, onboarded: false, onboardStep: 0, persona: null, depth: 'detailed', name: 'Matt', xp: 0,
+  return { version: 3, onboarded: false, onboardStep: 0, persona: null, depth: 'detailed', name: '', xp: 0,
     metrics: structuredClone(DEFAULT_METRICS), log: [], streak: 0, bestStreak: 0, lastCheckin: null, badges: [],
     upgraded: false, modeHistory: [],
     challenge: { day: 0, lastDate: null, todays: {}, todaysDate: null, completed: 0, startDate: null },
     sports: [...DEFAULT_SPORTS], goals: seedGoals(), everParked: false, sessions: [], pbCount: 0,
     habits: { active: HABITS.filter(h => h.core).map(h => h.id), slots: 3, earnedSlots: 0, wishlist: [], paused: [],
       days: {}, start: today(), evaluatedTo: null, weakWeeks: 0, override: false, weekLog: [] },
-    photoCount: 0, photoWeeks: 0, share: { weight: false, photo: false }, prosthetic: 'left', goalSlots: {}, goalSlotAt: {}, goalWish: {}, goalOverride: {}, capChecked: true, // Matt: LEFT below-knee prosthetic
+    photoCount: 0, photoWeeks: 0, share: { weight: false, photo: false }, prosthetic: 'none', prostheticSet: false, goalSlots: {}, goalSlotAt: {}, goalWish: {}, goalOverride: {}, capChecked: true, analytics: { opt: null, id: null }, lastSeen: null,
     avatarEnergy: { date: null, value: 0, logs: 0 }, ride: { date: null, pending: null, claimed: null, flairDate: null } };
 }
 // Fill any missing fields from a fresh state (v1 data, v2 exercise data, older v3 saves).
@@ -218,6 +221,13 @@ function migrate(old) {
   delete out.exercises;
   out.avatarEnergy = energyShape(old.avatarEnergy);
   out.ride = rideShape(old.ride);
+  out.analytics = analyticsShape(old.analytics);
+  // Existing onboarded saves keep their name and prosthetic (Matt's phone stays Matt / left).
+  // A fresh install that was only auto-saved before this version still says "Matt" and left — drop those defaults.
+  if (!out.onboarded) {
+    if (out.name === 'Matt') out.name = '';
+    if (!old.prostheticSet) out.prosthetic = 'none';
+  }
   if (!old.capChecked) { // saves from before the cap keep their goals, marked as overridden
     out.capChecked = true; const by = {};
     for (const g of out.goals) { if (g.status !== 'active') continue; const sp = goalDef(g.id).sport; by[sp] = (by[sp] || 0) + 1; if (by[sp] > GOAL_CAP) { g.overridden = true; out.goalOverride = { ...out.goalOverride, [sp]: true }; } }
@@ -274,6 +284,95 @@ function load() {
 }
 let S = load();
 const save = () => localStorage.setItem(STORE_KEY, JSON.stringify(S));
+
+/* ---------- 2b) OPT-IN ANALYTICS (PostHog; no-op until a key is set and the user opts in) ---------- */
+const TRACK_EVENTS = new Set(['app_open', 'onboarding_complete', 'workout_logged', 'energy_filled', 'ride_started', 'ride_reward_claimed', 'streak_break', 'comeback', 'analytics_opt_in', 'analytics_opt_out']);
+const sessionFlags = { onboarded: false, opened: false };
+function analyticsShape(raw) {
+  const a = raw && typeof raw === 'object' ? raw : {};
+  return { opt: a.opt === true ? true : a.opt === false ? false : null, id: typeof a.id === 'string' && a.id ? a.id : null };
+}
+function analyticsId() {
+  S.analytics = analyticsShape(S.analytics);
+  if (!S.analytics.id) S.analytics.id = (crypto.randomUUID && crypto.randomUUID()) || (uid() + uid());
+  return S.analytics.id;
+}
+function analyticsOn() { return !!(POSTHOG_KEY && S.analytics && S.analytics.opt === true); }
+let phQueue = [], phBooted = false;
+function installPostHogStub() {
+  if (window.posthog && window.posthog.init) return;
+  const ph = window.posthog = [];
+  ph._i = []; ph.init = function (key, opts, name) {
+    const methods = 'init capture register register_once unregister opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing get_distinct_id reset setPersonProperties identify'.split(' ');
+    const stub = (obj, method) => { obj[method] = function () { obj.push([method].concat([].slice.call(arguments, 0))); }; };
+    methods.forEach(m => stub(ph, m));
+    const s = document.createElement('script');
+    s.async = true; s.crossOrigin = 'anonymous';
+    s.src = opts.api_host.replace('.i.posthog.com', '-assets.i.posthog.com') + '/static/array.js';
+    document.head.appendChild(s);
+    ph._i.push([key, opts, name]);
+  };
+  ph.__SV = 1;
+}
+function ensurePostHog(done) {
+  if (!POSTHOG_KEY) { done && done(); return; }
+  if (window.posthog && window.posthog.__fqLoaded) { done && done(); return; }
+  if (done) phQueue.push(done);
+  if (phBooted) return;
+  phBooted = true;
+  installPostHogStub();
+  posthog.init(POSTHOG_KEY, {
+    api_host: POSTHOG_HOST,
+    autocapture: false,
+    capture_pageview: false,
+    capture_pageleave: false,
+    disable_session_recording: true,
+    persistence: 'localStorage',
+    opt_out_capturing_by_default: true,
+    person_profiles: 'identified_only',
+    bootstrap: { distinctID: analyticsId(), isIdentifiedID: false },
+    loaded(ph) { ph.__fqLoaded = true; const q = phQueue; phQueue = []; q.forEach(fn => fn()); }
+  });
+}
+// No properties. Never the name, photos, weight, FTP, or typed text.
+function track(event) {
+  if (!TRACK_EVENTS.has(event) || !analyticsOn() || !window.posthog) return false;
+  posthog.capture(event);
+  return true;
+}
+function noteOpen() {
+  const prev = S.lastSeen, idle = prev ? daysBetween(prev, today()) : 0;
+  if (prev !== today()) { S.lastSeen = today(); save(); }
+  if (S.analytics.opt !== true) return;
+  ensurePostHog(() => { sessionFlags.opened = true; track('app_open'); if (idle >= 7) track('comeback'); });
+}
+let analyticsSheetShown = false;
+function maybeAnalyticsAsk() {
+  if (!S.onboarded || R.tab !== 'home' || S.analytics.opt != null || analyticsSheetShown || S.ride?.pending) return;
+  analyticsSheetShown = true;
+  setTimeout(() => { if (S.analytics.opt == null && R.tab === 'home' && !S.ride?.pending) openAnalyticsSheet(); }, 360);
+}
+window.openAnalyticsSheet = () => {
+  modal(`<div class="analyticsask"><h2>Help improve Fit Quest?</h2>
+    <p class="muted">Anonymous usage data only: that you opened the app, finished setup, or logged a workout. Never your name, photos, weight, FTP, or anything you type. A random id, stored on this phone. Off unless you say yes.</p>
+    <button class="wide" onclick="setAnalytics(true)">Share anonymous usage</button>
+    <button class="wide ghost" onclick="setAnalytics(false)">Not now</button></div>`);
+};
+window.setAnalytics = on => {
+  S.analytics = analyticsShape(S.analytics);
+  const was = S.analytics.opt === true;
+  S.analytics.opt = !!on;
+  if (on) analyticsId();
+  save(); closeModal();
+  if (on) ensurePostHog(() => {
+    if (window.posthog && posthog.opt_in_capturing) posthog.opt_in_capturing();
+    track('analytics_opt_in');
+    if (!sessionFlags.opened) { sessionFlags.opened = true; track('app_open'); }
+    if (sessionFlags.onboarded) { sessionFlags.onboarded = false; track('onboarding_complete'); }
+  });
+  else if (was && window.posthog) { track('analytics_opt_out'); if (posthog.opt_out_capturing) posthog.opt_out_capturing(); }
+  render();
+};
 
 /* ---------- 3) SCORING ---------- */
 const clamp01 = x => Math.max(0, Math.min(1, x || 0));
@@ -334,7 +433,7 @@ function applyMissedDays() {
   if (S.lastCheckin) {
     const missed = daysBetween(S.lastCheckin, today()) - 1;
     if (missed > 0 && !S._penalised?.[today()]) {
-      if (P.streakBreaks && S.streak > 0) S.slumpDate = today();
+      if (P.streakBreaks && S.streak > 0) { S.slumpDate = today(); track('streak_break'); }
       if (P.streakBreaks) S.streak = 0;
       if (P.missPenalty) S.xp = Math.max(0, S.xp - P.missPenalty * missed);
       S._penalised = { [today()]: true };
@@ -657,7 +756,7 @@ async function drawShare(fmt, theme, opt) {
     if (!sticker) { g.fillStyle = photoBg ? 'rgba(0,0,0,.45)' : light ? '#11131a' : 'rgba(255,255,255,.08)'; roundRect(g, cx - 380, y - 70, 760, 110, 55); g.fill(); }
     shadow(true); g.fillStyle = sticker ? '#fff' : light ? '#fff' : '#fff'; g.font = F(800, 50); g.fillText(`NEW: ${unlock.toUpperCase()}`, cx, y + 4);
   }
-  g.fillStyle = sub2; g.font = F(600, 32); g.fillText(`${S.name.toUpperCase()} · ${fmtDate(today()).toUpperCase()}`, cx, H - (story ? 160 : 50));
+  g.fillStyle = sub2; g.font = F(600, 32); g.fillText(`${displayName().toUpperCase()} · ${fmtDate(today()).toUpperCase()}`, cx, H - (story ? 160 : 50));
   return c;
 }
 function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
@@ -703,7 +802,7 @@ const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16), c = [n >> 16, 
 function avatarSVG(o = {}) {
   const A = avatarState(), st = AV_STAGES[o.stage ?? avStage(overall(S))], fr = AV_STAGES[o.from ?? o.stage ?? avStage(overall(S))];
   const kit = o.kit || Object.fromEntries(Object.keys(KIT).map(k => [k, kitOn(k)]));
-  const skin = A.skin, skinD = shade(skin, 0.86), hair = A.hairCol, side = S.prosthetic || 'left';
+  const skin = A.skin, skinD = shade(skin, 0.86), hair = A.hairCol, side = prostheticSide();
   const shirt = kit.hoodie ? '#474c59' : kit.trisuit ? '#1f2c5e' : '#ff5a1f', shirtD = shade(shirt, 0.82), shorts = kit.trisuit ? '#1f2c5e' : '#232838';
   // animated parts: style = "from" values, data-to = target values (render() swaps them so stage changes ease)
   const T = (id, f, t, origin) => `style="transform-origin:${origin};transform:${f}" data-to="${t}" data-av="${id}"`;
@@ -811,6 +910,8 @@ function grantWorkoutEnergy(sessions) {
   S.avatarEnergy.value = Math.min(100, before + (big ? 100 : n === 0 ? 60 : 40));
   const started = before < 100 && S.avatarEnergy.value >= 100;
   if (started) S.ride.date = today();
+  if (S.avatarEnergy.value > before) track('energy_filled');
+  if (started) track('ride_started');
   return { add: S.avatarEnergy.value - before, value: S.avatarEnergy.value, started, big };
 }
 function energyNote(e) { return e.started ? '⚡ Energy full · on a ride' : `⚡ Energy ${e.value}/100`; }
@@ -833,6 +934,7 @@ window.claimEnergyReward = () => {
   const day = S.ride.pending;
   S.ride.claimed = day; S.ride.pending = null; S.ride.flairDate = today();
   const gained = addXP(ENERGY_XP, 'ride bonus', true);
+  track('ride_reward_claimed');
   save(); closeModal(); render(); toast(`⚡ Ride bonus +${gained} XP`);
 };
 function energyPanel() {
@@ -858,6 +960,8 @@ function avatarImage(mood = 'idle') { // static SVG -> Image, for canvas share c
 /* ---------- 10) VIEWS ---------- */
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const displayName = () => ((S.name || '').trim() || 'Athlete');
+function prostheticSide() { return S.prosthetic === 'left' || S.prosthetic === 'right' ? S.prosthetic : 'none'; }
 let R = { tab: 'home', ex: null, range: 'all', more: 'badges', pose: 'front', histKey: 'ovr' };
 function toast(msg, force) { if (R.tab === 'log' && !force) return; const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2600); }
 function go(tab, extra = {}) { Object.assign(R, { tab, ex: null }, extra); render(); window.scrollTo(0, 0); }
@@ -872,7 +976,7 @@ function render() {
   const li = levelInfo(S.xp);
   $('#levelbox').innerHTML = on ? `<div class="lvl"><b>LV ${li.level}</b><span>${S.xp.toLocaleString()} XP</span></div><div class="xpbar"><i style="width:${li.pct}%"></i></div><small>${li.toNext} XP to LV ${li.level + 1}</small>` : '';
   $('#view').innerHTML = on ? VIEWS[R.tab]() : onboarding();
-  AFTER[R.tab]?.(); settleAvatars(); maybeEnergyReward();
+  AFTER[R.tab]?.(); settleAvatars(); maybeEnergyReward(); maybeAnalyticsAsk();
 }
 
 function modePicker(sel, fn) {
@@ -884,26 +988,33 @@ function depthPicker(sel, fn) {
   return Object.entries(DEPTHS).map(([k, p]) => `<button class="opt ${sel === k ? 'sel' : ''}" onclick="${fn}('${k}')"><span class="oi">${p.icon}</span><span><b>${p.name}</b><small>${p.desc}</small></span></button>`).join('');
 }
 function onboarding() {
-  const st = S.onboardStep, N = 6, dots = `<div class="steps">${[...Array(N)].map((_, i) => `<i class="${i <= st ? 'on' : ''}"></i>`).join('')}</div>`;
+  const st = S.onboardStep, N = 7, dots = `<div class="steps">${[...Array(N)].map((_, i) => `<i class="${i <= st ? 'on' : ''}"></i>`).join('')}</div>`;
   const nav = (back, next, label = 'Next') => `<div class="row"><button class="ghost" onclick="S.onboardStep=${back};render()">Back</button><button onclick="${next}">${label}</button></div>`;
-  if (st === 0) return `${dots}<div class="hero"><div class="hero-ic">🏁</div><h1>Welcome, ${esc(S.name)}</h1><p class="muted">Pick how hard the game plays. You can drop down any time; moving up earns a badge.</p></div>
-    ${S._migratedFromV1 ? '<div class="panel note">Your v1 data (XP, streak, badges, history) has been carried over.</div>' : ''}${modePicker(S.persona, 'obPersona')}`;
-  if (st === 1) return `${dots}<h2>How much do you want to track?</h2><p class="muted">Switch any time in More › Settings.</p>${depthPicker(S.depth, 'obDepth')}
+  const prost = prostheticSide();
+  if (st === 0) return `${dots}<div class="hero"><div class="hero-ic">🏁</div><h1>Welcome</h1><p class="muted">What should we call you? This stays on your phone.</p></div>
+    <div class="panel"><label for="ob-name">Display name</label><input id="ob-name" placeholder="Athlete" maxlength="24" autocomplete="nickname" value="${esc(S.name)}" oninput="S.name=this.value"></div>
+    <div class="panel"><label>Prosthetic</label><p class="muted">Drawn on your avatar and sample photos. Choose none if it doesn't apply.</p>
+      <div class="seg sm">${[['left', 'Left'], ['right', 'Right'], ['none', 'None']].map(([k, l]) => `<button type="button" class="${prost === k ? 'on' : ''}" onclick="setProsthetic('${k}')">${l}</button>`).join('')}</div></div>
+    <button class="wide" onclick="obNameNext()">Next</button>`;
+  if (st === 1) return `${dots}<div class="hero"><div class="hero-ic">🏁</div><h1>Welcome${S.name.trim() ? ', ' + esc(S.name.trim()) : ''}</h1><p class="muted">Pick how hard the game plays. You can drop down any time; moving up earns a badge.</p></div>
+    ${S._migratedFromV1 ? '<div class="panel note">Your v1 data (XP, streak, badges, history) has been carried over.</div>' : ''}${modePicker(S.persona, 'obPersona')}
     <button class="ghost wide" onclick="S.onboardStep=0;render()">Back</button>`;
-  if (st === 2) return `${dots}<h2>Your sports</h2><p class="muted">Pick everything you train. You can change this later in Settings.</p>${sportPicker()}
-    ${nav(1, "S.onboardStep=3;save();render();scrollTo(0,0)")}`;
-  if (st === 3) return `${dots}<h2>Your goals</h2><p class="muted">Pick specific benchmarks. Targets are scaled for ${PERSONAS[S.persona].name} mode; edit any of them.</p>
-    ${goalPicker()}${nav(2, "S.onboardStep=4;save();render();scrollTo(0,0)")}`;
-  if (st === 4) { const m = S.metrics, f = (k, f2, step) => `<div><label>${f2 === 'current' ? 'Now' : 'Target'}</label><input type="number" inputmode="decimal" step="${step}" value="${m[k][f2]}" onchange="obMetric('${k}','${f2}',this.value)"></div>`;
-    return `${dots}<h2>Your starting line</h2><p class="muted">Seeded from your TrainingPeaks baseline. Edit if anything has changed.</p>
+  if (st === 2) return `${dots}<h2>How much do you want to track?</h2><p class="muted">Switch any time in More › Settings.</p>${depthPicker(S.depth, 'obDepth')}
+    <button class="ghost wide" onclick="S.onboardStep=1;render()">Back</button>`;
+  if (st === 3) return `${dots}<h2>Your sports</h2><p class="muted">Pick everything you train. You can change this later in Settings.</p>${sportPicker()}
+    ${nav(2, "S.onboardStep=4;save();render();scrollTo(0,0)")}`;
+  if (st === 4) return `${dots}<h2>Your goals</h2><p class="muted">Pick specific benchmarks. Targets are scaled for ${PERSONAS[S.persona].name} mode; edit any of them.</p>
+    ${goalPicker()}${nav(3, "S.onboardStep=5;save();render();scrollTo(0,0)")}`;
+  if (st === 5) { const m = S.metrics, f = (k, f2, step) => `<div><label>${f2 === 'current' ? 'Now' : 'Target'}</label><input type="number" inputmode="decimal" step="${step}" value="${m[k][f2]}" onchange="obMetric('${k}','${f2}',this.value)"></div>`;
+    return `${dots}<h2>Your starting line</h2><p class="muted">Seeded from a typical athlete baseline. Edit if anything has changed.</p>
     <div class="panel"><b>⚖️ Weight (kg)</b><div class="grid2">${f('weight', 'current', 0.1)}${f('weight', 'target', 0.1)}</div></div>
     <div class="panel"><b>🚴 FTP (W)</b><div class="grid2">${f('ftp', 'current', 1)}${f('ftp', 'target', 1)}</div></div>
     <div class="panel note">🎯 <b>Baseline window:</b> each goal needs a first attempt within ${BASELINE_DAYS} days or it gets parked. Build-up goals (marathon, long swims, 100 km) just need any session in that sport. Set them all in time for the 🎯 badge.</div>
-    ${nav(3, "S.onboardStep=5;save();render()")}`; }
+    ${nav(4, "S.onboardStep=6;save();render()")}`; }
   return `${dots}<h2>Earn your habits</h2><div class="panel"><p>You start with <b>${S.habits.slots}</b> habits:</p>
     ${S.habits.active.map(id => `<div class="hb static"><span>${habit(id).icon}</span>${habit(id).label}</div>`).join('')}
     <p class="muted">Hit them on 6 of 7 days and you unlock a new habit slot. Ideas go on a wishlist until then. Two weak weeks in a row pauses your newest habit instead of failing everything.</p></div>
-    ${nav(4, 'obFinish()', `Let's go ${PERSONAS[S.persona].icon}`)}`;
+    ${nav(5, 'obFinish()', `Let's go ${PERSONAS[S.persona].icon}`)}`;
 }
 function sportPicker() {
   return `<div class="sports">${Object.entries(SPORTS).map(([k, [ic, n]]) => `<button class="${S.sports.includes(k) ? 'on' : ''}" onclick="toggleSport('${k}')"><span>${ic}</span>${n}<i>${S.sports.includes(k) ? '✓' : ''}</i></button>`).join('')}</div>`;
@@ -926,7 +1037,7 @@ function athleteCard() {
   return `<div class="card ${t}"><div class="shine"></div>
     <div class="ctop"><div><div class="ovr">${r}</div><div class="ovl">OVR</div></div><div class="tier">${t.toUpperCase()}<br><span>${P.icon} ${P.name.toUpperCase()}</span></div></div>
     <div class="cav">${avatarSVG({ mood: avMood(), from: S.avShown ?? avStage(r) })}</div><div class="stagetag">${AV_STAGES[avStage(r)].name}</div>
-    <div class="name">${esc(S.name)}</div>
+    <div class="name">${esc(displayName())}</div>
     <div class="stats">${Object.entries(st).map(([k, v]) => `<div><b>${statRating(v)}</b>${k}</div>`).join('')}<div><b>${wkg(S).toFixed(2)}</b>W/KG</div></div></div>`;
 }
 
@@ -1114,7 +1225,7 @@ VIEWS.home = () => {
   const H = S.habits, rec = H.days[today()] || { done: [] }, hDone = rec.done.filter(d => H.active.includes(d)).length;
   const todays = S.sessions.filter(x => x.date === today()), last = S.sessions.slice().sort((a, b) => b.date.localeCompare(a.date) || b.t - a.t)[0];
   const iron = S.challenge.lastDate === today(), r = overall(S), hr = new Date().getHours(), pend = S.depth === 'detailed' ? pendingBaselines() : [];
-  return `<div class="hello"><small>${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}, ${esc(S.name)}</small><b>${todays.length ? 'Nice work today 💪' : 'Just trained? Log it.'}</b></div>
+  return `<div class="hello"><small>${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}, ${esc(displayName())}</small><b>${todays.length ? 'Nice work today 💪' : 'Just trained? Log it.'}</b></div>
     ${!S.hintSeen ? `<div class="panel hint"><b>👋 How to use Fit Quest</b><ol><li>Finish a workout, open the app.</li><li>Tap <b>Log workout</b>: pick the goal you attempted (or a general session), nudge the numbers, tick your habits.</li><li>Collect XP, PBs and unlocks. Share if you like.</li></ol><button class="sm" onclick="S.hintSeen=true;save();render()">Got it</button></div>` : ''}
     <button class="cta" onclick="startLog()"><span>＋</span>Log workout<small>${todays.length ? `${todays.length} logged today · add more` : 'About 30 seconds'}</small></button>
     ${energyPanel()}${overallHero()}${tracking()}
@@ -1210,7 +1321,7 @@ window.finishLog = () => {
   if (H.active.includes('trained') && !(rec && rec.done.includes('trained'))) tickHabit('trained', true);
   updateBaselines(); F.newBaselines = S.goals.filter(g => g.baselineDate && !before.has(g.id)).map(g => g.id);
   F.energy = grantWorkoutEnergy(F.res.map(x => x.cur));
-  checkBadges(); save(); F.step = 4; render(); scrollTo(0, 0);
+  checkBadges(); track('workout_logged'); save(); F.step = 4; render(); scrollTo(0, 0);
   const p = F.res.find(x => x.cur.pb)?.cur; if (p) pbMoment(fmtVal(goalDef(p.exId), p.key), goalDef(p.exId).name);
 };
 
@@ -1268,7 +1379,7 @@ function hxDivisionPicker() {
   const h = hxCfg(), seg = (key, opts) => `<div class="seg sm">${Object.entries(opts).map(([k, l]) => `<button class="${h[key] === k ? 'on' : ''}" onclick="hxCfg().${key}='${k}';save();render()">${l}</button>`).join('')}</div>`;
   return `<div class="panel hxpanel"><b>🟨 Hyrox division</b>${seg('div', HX_DIV)}${h.div === 'adaptive' ? seg('adapt', HX_ADAPT) : ''}
     <div class="chips">${Object.entries(HX_CAT).filter(([k]) => h.div !== 'adaptive' || ['men', 'women'].includes(k)).map(([k, l]) => `<button class="chip btn ${h.cat === k ? 'on' : ''}" onclick="hxCfg().cat='${k}';save();render()">${l}</button>`).join('')}</div>
-    ${h.div !== 'adaptive' && (S.prosthetic || 'left') !== 'none' ? '<p class="muted">With a below-knee prosthetic you may qualify for <b>Adaptive · Lower Limb Minor</b>. Check the HYROX adaptive classification.</p>' : ''}
+    ${h.div !== 'adaptive' && prostheticSide() !== 'none' ? '<p class="muted">With a below-knee prosthetic you may qualify for <b>Adaptive · Lower Limb Minor</b>. Check the HYROX adaptive classification.</p>' : ''}
     <div class="wtable">${HX_STATIONS.filter(([k]) => hxWeight(k)).map(([k, n]) => `<div><span>${n}</span><b>${hxWeight(k)}</b></div>`).join('')}</div></div>`;
 }
 
@@ -1315,19 +1426,21 @@ const MORE = {
     return `<h3>Intensity</h3><p class="muted">Drop down any time. Moving up earns the 📈 badge.</p>${modePicker(S.persona, 'pickPersona')}
       <h3>Tracking</h3>${depthPicker(S.depth, 'pickDepth')}
       <h3>Sports & goals</h3><div class="panel"><p class="muted">${S.sports.map(sportName).join(' · ')}<br>${activeGoals(S).length} active goals${S.goals.some(g => g.status === 'parked') ? `, ${S.goals.filter(g => g.status === 'parked').length} parked` : ''}</p><button class="ghost wide" onclick="go('goals')">Edit sports & goals</button></div>
-      <h3>Profile</h3><div class="panel"><label>Name on card</label><input value="${esc(S.name)}" onchange="S.name=this.value;save()">
+      <h3>Profile</h3><div class="panel"><label>Name on card</label><input placeholder="Athlete" value="${esc(S.name)}" onchange="S.name=this.value.trim().slice(0,24);save();render()">
       </div>${S.sports.includes('hyrox') ? '<h3>Hyrox</h3>' + hxDivisionPicker() : ''}<h3>Avatar</h3><div class="panel avedit"><div class="avprev">${avatarSVG({ mood: 'idle', size: 220 })}</div>
         <label>Skin tone</label><div class="sw">${SKINS.map(c => `<button style="background:${c}" class="${avatarState().skin === c ? 'on' : ''}" onclick="setAv('skin','${c}')" aria-label="skin ${c}"></button>`).join('')}</div>
         <label>Hair</label><div class="chips">${Object.entries(HAIRS).map(([k, l]) => `<button class="chip btn ${avatarState().hair === k ? 'on' : ''}" onclick="setAv('hair','${k}')">${l}</button>`).join('')}</div>
         <div class="sw">${HAIR_COLS.map(c => `<button style="background:${c}" class="${avatarState().hairCol === c ? 'on' : ''}" onclick="setAv('hairCol','${c}')" aria-label="hair colour ${c}"></button>`).join('')}</div>
         <label>Beard</label><div class="chips">${Object.entries(BEARDS).map(([k, l]) => `<button class="chip btn ${avatarState().beard === k ? 'on' : ''}" onclick="setAv('beard','${k}')">${l}</button>`).join('')}</div>
-        <label>Prosthetic (drawn on the avatar and sample photos)</label><div class="seg sm">${[['left', 'Left below-knee'], ['right', 'Right below-knee'], ['none', 'None']].map(([k, l]) => `<button class="${(S.prosthetic || 'left') === k ? 'on' : ''}" onclick="S.prosthetic='${k}';save();render()">${l}</button>`).join('')}</div>
+        <label>Prosthetic (drawn on the avatar and sample photos)</label><div class="seg sm">${[['left', 'Left below-knee'], ['right', 'Right below-knee'], ['none', 'None']].map(([k, l]) => `<button class="${prostheticSide() === k ? 'on' : ''}" onclick="setProsthetic('${k}')">${l}</button>`).join('')}</div>
         <label>Kit <small>(earned with badges and levels)</small></label><div class="kit">${Object.entries(KIT).map(([k, [n, ic, req, t]]) => { const un = t(S), on = un && avatarState().kit[k];
           return `<button class="${on ? 'on' : ''} ${un ? '' : 'locked'}" ${un ? `onclick="toggleKit('${k}')"` : 'disabled'}><span>${un ? ic : '🔒'}</span><b>${n}</b><small>${un ? (on ? 'Equipped' : 'Tap to wear') : req}</small></button>`; }).join('')}</div></div>
       <h3>Body</h3>${rows}
+      <h3>Privacy</h3><div class="panel" id="analytics-toggle"><label class="check"><input type="checkbox" ${S.analytics.opt ? 'checked' : ''} onchange="setAnalytics(this.checked)"> Help improve Fit Quest with anonymous usage data</label>
+        <p class="muted">Off unless you turn it on. A random id only. Never your name, photos, weight, FTP, or anything you type.</p></div>
       <div class="row"><button class="ghost" onclick="exportData()">Export data (JSON)</button>
       <button class="ghost danger" onclick="if(confirm('Wipe all data, including photos?')){localStorage.removeItem(STORE_KEY);localStorage.removeItem(V1_KEY);indexedDB.deleteDatabase('fitquest-photos');location.reload()}">Reset all</button></div>
-      <p class="muted center">Fit Quest v3 · all data stays in this browser</p>`;
+      <p class="muted center">Fit Quest v3.10 · all data stays in this browser</p>`;
   },
 };
 const rangeSeg = () => `<div class="range">${[['4w', '4W'], ['3m', '3M'], ['all', 'All']].map(([k, l]) => `<button class="${R.range === k ? 'on' : ''}" onclick="R.range='${k}';render()">${l}</button>`).join('')}</div>`;
@@ -1363,10 +1476,17 @@ const AFTER = {
 };
 
 /* ---------- 11) ACTIONS ---------- */
-window.obPersona = p => { S.persona = p; S.goals = seedGoals(p); S.habits.slots = START_SLOTS[p]; S.habits.active = []; fillSlots(); S.onboardStep = 1; save(); render(); };
-window.obDepth = d => { S.depth = d; S.onboardStep = 2; save(); render(); };
+window.setProsthetic = side => { if (!['left', 'right', 'none'].includes(side)) return; S.prosthetic = side; S.prostheticSet = true; save(); render(); };
+window.obNameNext = () => { S.name = (S.name || '').trim().slice(0, 24); S.prostheticSet = true; if (!['left', 'right', 'none'].includes(S.prosthetic)) S.prosthetic = 'none'; S.onboardStep = 1; save(); render(); };
+window.obPersona = p => { S.persona = p; S.goals = seedGoals(p); S.habits.slots = START_SLOTS[p]; S.habits.active = []; fillSlots(); S.onboardStep = 2; save(); render(); };
+window.obDepth = d => { S.depth = d; S.onboardStep = 3; save(); render(); };
 window.obMetric = (k, f, v) => { S.metrics[k][f] = parseFloat(v); if (f === 'current') S.metrics[k].base = parseFloat(v); save(); };
-window.obFinish = () => { S.onboarded = true; S.modeHistory.push({ date: today(), persona: S.persona }); S.habits.start = today(); save(); R.tab = 'home'; render(); toast(`${PERSONAS[S.persona].icon} ${PERSONAS[S.persona].name} mode activated`); };
+window.obFinish = () => {
+  S.name = (S.name || '').trim().slice(0, 24); S.onboarded = true; S.prostheticSet = true;
+  S.modeHistory.push({ date: today(), persona: S.persona }); S.habits.start = today(); save(); R.tab = 'home';
+  if (!track('onboarding_complete')) sessionFlags.onboarded = true;
+  render(); toast(`${PERSONAS[S.persona].icon} ${PERSONAS[S.persona].name} mode activated`);
+};
 window.pickPersona = p => { if (p === S.persona) return; const up = PERSONAS[p].rank > PERSONAS[S.persona].rank; setPersona(p); applyMissedDays(); render(); toast(`${PERSONAS[p].icon} ${PERSONAS[p].name} mode${up ? ' · moved up!' : ''}`); };
 window.pickDepth = d => { S.depth = d; save(); render(); toast(`Tracking: ${DEPTHS[d].name}`); };
 window.setMetric = (k, f, v) => { S.metrics[k][f] = parseFloat(v); save(); };
@@ -1493,7 +1613,7 @@ const readRow = r => Object.fromEntries([...r.querySelectorAll('input')].map(i =
 window.logSession = id => {
   const L = goalDef(id), sets = cleanSets(L, [...document.querySelectorAll('#sets .setrow')].map(readRow));
   if (!sets.length) return toast('Enter a complete result');
-  const { prev, cur } = saveSession(id, sets, false); const energy = grantWorkoutEnergy(cur); updateBaselines(); checkBadges(); save(); render();
+  const { prev, cur } = saveSession(id, sets, false); const energy = grantWorkoutEnergy(cur); updateBaselines(); checkBadges(); track('workout_logged'); save(); render();
   setTimeout(() => toast(energyNote(energy), true), 1600);
   $('#cmpout').innerHTML = `<div class="cmp">${prev ? `<small>vs ${fmtDate(prev.date)}</small>` : ''}${compare(prev, cur, L).map(x => `<span class="${x.cls}">${x.txt}</span>`).join('')}</div>`;
 };
@@ -1583,7 +1703,7 @@ document.querySelectorAll('#nav button').forEach(b => b.onclick = () => go(b.dat
 
 // ?demo seeds 8 weeks of sample data (replaces local data, generates sample silhouette photos)
 async function seedDemo() {
-  S = freshState(); S.persona = 'athlete'; S.onboarded = true; S.habits.slots = 3; S.sports = ['run', 'cycle', 'swim', 'hyrox', 'strength', 'bodyweight'];
+  S = freshState(); S.persona = 'athlete'; S.onboarded = true; S.name = 'Alex'; S.prosthetic = 'left'; S.prostheticSet = true; S.analytics = { opt: false, id: null }; S.habits.slots = 3; S.sports = ['run', 'cycle', 'swim', 'hyrox', 'strength', 'bodyweight'];
   const start = addDays(today(), -55); S.habits.start = start;
   const rnd = (i, k) => (Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % 1;
   for (let i = 0; i <= 55; i++) {
@@ -1649,7 +1769,7 @@ async function seedDemo() {
     const k = 1 - w * 0.025, bw = (pose === 'side' ? 110 : 170) * k; g.fillStyle = '#c99a7a';
     g.beginPath(); g.arc(300, 150, 55, 0, 7); g.fill(); roundRect(g, 300 - bw, 215, bw * 2, 300, 60); g.fill();
     // legs: the prosthetic side follows S.prosthetic (default LEFT below-knee). Front view: subject's left = viewer's right; back view: viewer's left.
-    const pl = S.prosthetic || 'left', pxLeft = 300 - bw * 0.8, pxRight = 300 + bw * 0.1, lw = bw * 0.7;
+    const pl = prostheticSide(), pxLeft = 300 - bw * 0.8, pxRight = 300 + bw * 0.1, lw = bw * 0.7;
     const protX = pl === 'none' ? null : pose === 'front' ? (pl === 'left' ? pxRight : pxLeft) : pose === 'back' ? (pl === 'left' ? pxLeft : pxRight) : pxRight;
     for (const x of pose === 'side' ? [pxRight] : [pxLeft, pxRight]) { g.fillStyle = '#c99a7a'; g.fillRect(x, 500, lw, x === protX ? 130 : 260);
       if (x === protX) { g.fillStyle = '#8892a6'; g.fillRect(x + lw * 0.3, 630, lw * 0.4, 110); g.fillRect(x, 740, lw * 1.1, 20); } }
@@ -1663,5 +1783,5 @@ async function seedDemo() {
 if ('serviceWorker' in navigator && location.protocol !== 'file:') addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 (async function boot() {
   if (location.search.includes('demo')) { await seedDemo(); history.replaceState(null, '', location.pathname); }
-  await loadPhotos(); applyMissedDays(); updateBaselines(); checkBadges(); save(); render();
+  await loadPhotos(); applyMissedDays(); updateBaselines(); checkBadges(); noteOpen(); save(); render();
 })();

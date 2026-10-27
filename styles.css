@@ -246,6 +246,7 @@ svg.av.static *{animation:none!important}
 .energyclaim{width:100%;margin:-4px 0 12px;background:rgba(255,176,32,.12);color:var(--acc2);border:1px solid rgba(255,176,32,.45)}
 .enote{position:relative;font:800 16px var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--acc2);margin-top:6px}
 .energyreward{text-align:center}.energyreward h2{margin:4px 0 8px}.energyreward .tiles{margin:12px 0 4px}
+.analyticsask h2{margin-right:28px}.analyticsask p{margin:8px 0 4px}
 .rav{position:relative;display:flex;justify-content:center;margin-bottom:-6px}
 .avprev{display:flex;justify-content:center;background:radial-gradient(circle at 50% 60%,#2a3150,var(--panel2) 70%);border-radius:14px;margin-bottom:10px;padding:6px}
 .avedit label{margin:10px 0 6px}

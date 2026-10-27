@@ -13,7 +13,7 @@ v1 saves (`fitquest-v1`) migrate automatically to `fitquest-v2`; the v1 key is k
 - See `screenshots/avatar-stages.png`, `avatar-card.png` and `avatar-kit-moods.png`.
 
 ## Profile: prosthetic side ✅ built
-- Matt has a **LEFT below-knee** prosthetic. `S.prosthetic` defaults to `'left'` (Settings › Profile: Left / Right / None). The sample photo silhouettes draw it on the subject's left (viewer's right from the front, viewer's left from the back). Any future avatar should read this field.
+- Matt has a **LEFT below-knee** prosthetic, stored on his save as `S.prosthetic: 'left'`. From v3.10 a brand-new save defaults to `'none'` and onboarding asks Left / Right / None. The avatar and sample photos draw whichever side is stored (viewer's right from the front when the side is left).
 
 ## Goals-based tracking (v3, 12 Oct 2026) ✅ built
 Matt found the v2 metrics too broad, so tracking is now built around **specific benchmark goals** he picks up front.
@@ -173,3 +173,12 @@ A reason to open the app tomorrow. Phone-local only (`S.avatarEnergy`, `S.ride` 
 - **Next morning.** If that ride was yesterday and the bonus is unclaimed, Home opens a claim sheet (also a banner if the sheet is closed). Claim grants **+25 XP** (mode multiplier applies, same as other XP) and a one-day ⚡ glow on the energy card. Claiming clears it. Skipping a day only leaves the bar empty — this loop does not take XP or break a streak.
 - **Demo** (`?demo`) opens with yesterday’s ride ready to claim and today’s bar at 60, so a single extra log sends the avatar riding.
 - sw.js VERSION fq-v3.9.0.
+
+## v3.10 Analytics + neutral onboarding ✅ built
+New installs are not addressed as Matt, and usage stats are off until someone opts in.
+
+- **Name.** `freshState()` stores `name: ''`. Greetings, the athlete card, and share cards use `displayName()`, which shows **Athlete** when the name is blank. Onboarding step 1 asks for a display name (placeholder Athlete) before intensity. Settings still edits "Name on card".
+- **Prosthetic.** Brand-new saves default to **None**. The name step also asks Left / Right / None. An already onboarded save is left alone, so an existing phone that stored `name: 'Matt'` and `prosthetic: 'left'` keeps both. A not-yet-onboarded save that only has the old baked-in defaults (`Matt` + left, and no `prostheticSet`) is reset to a blank name and None.
+- **Demo** (`?demo`) uses the sample name **Alex** and still draws a left below-knee prosthetic so the sample avatar is unchanged. Goal seed numbers are unchanged.
+- **Analytics.** `POSTHOG_KEY` at the top of `app.js` is empty until a project key is pasted in. Empty key = no script and no requests. Host is PostHog Cloud US (`https://us.i.posthog.com`). Default is off. Home shows a one-time sheet after setup (or on the next open for people already onboarded): "Help improve Fit Quest with anonymous usage data". The same switch lives in Settings › Privacy. Opting out calls PostHog `opt_out_capturing` immediately. Autocapture, pageviews, and session replay are off. Events have no properties: `app_open`, `onboarding_complete`, `workout_logged`, `energy_filled`, `ride_started`, `ride_reward_claimed`, `streak_break`, `comeback` (open after 7+ days, using local `S.lastSeen` only), `analytics_opt_in`, `analytics_opt_out`. Distinct id is a random UUID in the save. Name, photos, weight, FTP, and typed text are not sent.
+- sw.js VERSION fq-v3.10.0.
